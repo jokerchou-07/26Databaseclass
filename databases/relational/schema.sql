@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
 -- ============================================================
 
 -- 國鐵訂位紀錄表
-CREATE TABLE IF NOT EXISTS bookings (
+CREATE TABLE IF NOT EXISTS national_rail_bookings (
     booking_id       VARCHAR(50)  PRIMARY KEY,
     user_id          VARCHAR(50)  NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     schedule_id      VARCHAR(50)  NOT NULL REFERENCES national_rail_schedules(schedule_id),
@@ -102,7 +102,7 @@ CREATE TABLE IF NOT EXISTS metro_travel_history (
 -- 付款紀錄表
 CREATE TABLE IF NOT EXISTS payments (
     payment_id     VARCHAR(50)  PRIMARY KEY,
-    booking_id     VARCHAR(50)  REFERENCES bookings(booking_id) ON DELETE SET NULL,
+    booking_id     VARCHAR(50)  REFERENCES national_rail_bookings(booking_id) ON DELETE SET NULL,
     history_id     VARCHAR(50)  REFERENCES metro_travel_history(history_id) ON DELETE SET NULL,
     amount_usd     NUMERIC(10,2) NOT NULL,
     payment_method VARCHAR(50)  NOT NULL, -- credit_card, easycard

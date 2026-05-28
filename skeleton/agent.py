@@ -619,6 +619,9 @@ JSON:"""
                 "Metro fare/price/cost/how-much-does-it-cost questions → get_metro_fare. "
                 "Rail fare/cost/price questions → check_national_rail_availability then get_national_rail_fare. "
                 "Schedule/timetable/trains/services questions → check_national_rail_availability or check_metro_availability. "
+                "National Rail schedules/trains/availability from NRxx to NRyy MUST trigger check_national_rail_availability. "
+                "Metro schedules/trains/availability from MSxx to MSyy MUST trigger check_metro_availability. "
+                
                 "Only call a tool when needed. Output nothing except tool calls."
             ),
         )
