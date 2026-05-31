@@ -290,7 +290,8 @@ def execute_booking(
                 if seat_id.lower() == "any":
                     avail_seats = query_available_seats(schedule_id, travel_date, fare_class)
                     if not avail_seats:
-                        raise ValueError("No seats available for this class.")
+                        conn.rollback()
+                        return False, "No seats available for this class."
                     seat_id = auto_select_adjacent_seats(avail_seats, 1)[0]
                     # Find corresponding coach for the assigned seat
                     coach = next(s["coach"] for s in avail_seats if s["seat_id"] == seat_id)
@@ -299,7 +300,8 @@ def execute_booking(
                     cur.execute("SELECT coach_number FROM national_rail_seat_layouts WHERE schedule_id = %s AND seat_number = %s", (schedule_id, seat_id))
                     coach_row = cur.fetchone()
                     if not coach_row:
-                        raise ValueError("Invalid seat_id for this schedule.")
+                        conn.rollback()
+                        return False, "Invalid seat_id for this schedule."
                     coach = coach_row[0]
 
                 # 1. Insert Booking
