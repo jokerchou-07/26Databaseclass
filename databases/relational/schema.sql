@@ -20,11 +20,15 @@ CREATE TABLE IF NOT EXISTS national_rail_stations (
 
 -- 註冊使用者表
 CREATE TABLE IF NOT EXISTS users (
-    user_id      VARCHAR(50)  PRIMARY KEY,
-    name         VARCHAR(100) NOT NULL,
-    email        VARCHAR(150) UNIQUE NOT NULL,
-    password     VARCHAR(255) NOT NULL,
-    created_at   TIMESTAMPTZ  DEFAULT NOW()
+    user_id         VARCHAR(50)  PRIMARY KEY,
+    name            VARCHAR(100) NOT NULL,
+    email           VARCHAR(150) UNIQUE NOT NULL,
+    password_hash   VARCHAR(256) NOT NULL,
+    salt            VARCHAR(100) NOT NULL,
+    year_of_birth   INT,                     -- 新增：出生年份
+    secret_question VARCHAR(255),            -- 新增：安全提問
+    secret_answer   VARCHAR(255),            -- 新增：安全提示答案
+    created_at      TIMESTAMPTZ  DEFAULT NOW()
 );
 
 -- ============================================================
@@ -75,16 +79,16 @@ CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
 -- ============================================================
 
 -- 國鐵訂位紀錄表
-CREATE TABLE IF NOT EXISTS national_rail_bookings (
+CREATE TABLE IF NOT EXISTS bookings (
     booking_id       VARCHAR(50)  PRIMARY KEY,
     user_id          VARCHAR(50)  NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     schedule_id      VARCHAR(50)  NOT NULL REFERENCES national_rail_schedules(schedule_id),
-    travel_date      DATE         NOT NULL,  -- 乘車日期
+    travel_date      DATE         NOT NULL,  
     departure_time   TIME         NOT NULL,
-    carriage_number  VARCHAR(10)  NOT NULL,  -- 改用 VARCHAR 以符合 Car A 等字串
+    carriage_number  VARCHAR(10)  NOT NULL,  
     seat_number      VARCHAR(10)  NOT NULL,
     amount_usd       NUMERIC(10,2) NOT NULL,
-    status           VARCHAR(50)  NOT NULL,  -- confirmed, cancelled
+    status           VARCHAR(50)  NOT NULL,  
     created_at       TIMESTAMPTZ  DEFAULT NOW()
 );
 
@@ -102,7 +106,7 @@ CREATE TABLE IF NOT EXISTS metro_travel_history (
 -- 付款紀錄表
 CREATE TABLE IF NOT EXISTS payments (
     payment_id     VARCHAR(50)  PRIMARY KEY,
-    booking_id     VARCHAR(50)  REFERENCES national_rail_bookings(booking_id) ON DELETE SET NULL,
+    booking_id     VARCHAR(50)  REFERENCES bookings(booking_id) ON DELETE SET NULL,
     history_id     VARCHAR(50)  REFERENCES metro_travel_history(history_id) ON DELETE SET NULL,
     amount_usd     NUMERIC(10,2) NOT NULL,
     payment_method VARCHAR(50)  NOT NULL, -- credit_card, easycard

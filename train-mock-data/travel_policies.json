@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "last_updated": "2024-01-01",
+  "last_updated": "2026-05-31",
   "metro": {
     "bicycles": {
       "foldable_bicycles": {
@@ -133,5 +133,19 @@
     ],
     "smoking_and_vaping": "Strictly prohibited on all train carriages and at all station platforms.",
     "conduct": "Passengers behaving in a manner that causes distress or danger to other passengers or staff may be removed from the train. In serious cases, the operator reserves the right to involve law enforcement."
+  },
+  "general_rules": {
+    "lost_property": {
+      "policy_code": "PL010",
+      "description": "If a passenger loses an item on City Metro or National Rail, they must report it within 7 days via the online portal or at a station service counter. Claimed items are kept for 30 days. Perishable items are disposed of immediately. A retrieval fee of $5.00 applies to electronics and high-value items."
+    },
+    "accessibility_and_assisted_travel": {
+      "policy_code": "PL011",
+      "description": "TransitFlow offers complimentary Passenger Assist services for travelers with disabilities or mobility constraints. Requests for boarding assistance, ramp deployment, or luggage guidance should be logged at least 2 hours prior to departure through the mobile app or helpline."
+    },
+    "penalty_fares": {
+      "policy_code": "PL012",
+      "description": "Traveling on National Rail or City Metro without a valid ticket, or failing to tap in/out using the campus wallet, will incur a penalty fare of $50.00 or twice the maximum single fare for that line, whichever is greater. Unpaid penalties will result in account suspension."
+    }
   }
 }

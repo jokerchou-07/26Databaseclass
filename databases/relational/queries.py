@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import random
 import string
+import hashlib
+import os
 import re
 from datetime import datetime, timezone, date
 from typing import Optional
@@ -49,6 +51,13 @@ def query_national_rail_availability(
     """
     Returns available schedules. Dynamically calculates booked seats 
     only if a travel_date is provided.
+    Args:
+        origin_id: The ID of the departure station.
+        destination_id: The ID of the arrival station.
+        travel_date: Optional; the date of travel to calculate seat availability.
+
+    Returns:
+        A list of dictionaries containing schedule details and available seats.
     """
     # Base query: fetches schedule details and total capacity
     sql = """
@@ -96,6 +105,14 @@ def query_national_rail_fare(
 ) -> Optional[dict]:
     """
     Retrieves standard or first-class fare directly from the schedule table.
+
+    Args:
+        schedule_id: The ID of the train schedule (e.g., 'NR_SCH01').
+        fare_class: The class of the fare, either 'standard' or 'first'.
+        stops_travelled: Number of stops (not used for base national rail fare but kept for signature matching).
+
+    Returns:
+        A dictionary containing fare details, or None if the schedule is not found.
     """
     sql = "SELECT fare_standard, fare_first FROM national_rail_schedules WHERE schedule_id = %s"
     with _connect() as conn:
@@ -120,6 +137,12 @@ def query_metro_schedules(origin_id: str, destination_id: str) -> list[dict]:
     """
     Joins the stop sequence table twice to ensure the train travels 
     from origin to destination in the correct direction (stop_order comparison).
+    Args:
+        origin_id: The ID of the departure metro station.
+        destination_id: The ID of the arrival metro station.
+
+    Returns:
+        A list of dictionaries containing schedule ID, line, frequency, fare, and stops travelled.
     """
     sql = """
         SELECT 
@@ -143,6 +166,12 @@ def query_metro_schedules(origin_id: str, destination_id: str) -> list[dict]:
 def query_metro_fare(schedule_id: str, stops_travelled: int) -> Optional[dict]:
     """
     Calculates metro fare: base fare + fixed rate per stop travelled.
+    Args:
+        schedule_id: The ID of the metro schedule.
+        stops_travelled: The number of stops between origin and destination.
+
+    Returns:
+        A dictionary containing fare details, or None if the schedule is not found.
     """
     sql = "SELECT fare FROM metro_schedules WHERE schedule_id = %s"
     with _connect() as conn:
@@ -169,8 +198,15 @@ def query_available_seats(
     fare_class: str,
 ) -> list[dict]:
     """
-    Finds seats in the layout that do NOT have a confirmed booking 
-    for the specified travel_date.
+    Finds seats in the layout that do not have a confirmed booking for the specified date.
+
+    Args:
+        schedule_id: The ID of the national rail schedule.
+        travel_date: The date of travel.
+        fare_class: The class of the fare ('standard' or 'first').
+
+    Returns:
+        A list of dictionaries representing available seats (seat_id, coach, row, column).
     """
     sql = """
         SELECT coach_number, seat_number 
@@ -225,6 +261,15 @@ def auto_select_adjacent_seats(available_seats: list[dict], count: int) -> list[
 # ── USER & BOOKING QUERIES ────────────────────────────────────────────────────
 
 def query_user_profile(user_email: str) -> Optional[dict]:
+    """
+    Retrieves a user's profile information by their email.
+
+    Args:
+        user_email: The email address of the user.
+
+    Returns:
+        A dictionary containing user details, or None if the user is not found.
+    """
     with _connect() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT * FROM users WHERE email = %s", (user_email,))
@@ -233,6 +278,15 @@ def query_user_profile(user_email: str) -> Optional[dict]:
 
 
 def query_user_bookings(user_email: str) -> dict:
+    """
+    Retrieves all booking and travel history for a specific user.
+
+    Args:
+        user_email: The email address of the user.
+
+    Returns:
+        A dictionary with keys 'national_rail' and 'metro' containing lists of history records.
+    """
     user = query_user_profile(user_email)
     if not user: 
         return {"national_rail": [], "metro": []}
@@ -250,6 +304,15 @@ def query_user_bookings(user_email: str) -> dict:
 
 
 def query_payment_info(booking_id: str) -> Optional[dict]:
+    """
+    Retrieves payment information for a specific booking.
+
+    Args:
+        booking_id: The ID of the booking.
+
+    Returns:
+        A dictionary containing payment details, or None if not found.
+    """
     with _connect() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT * FROM payments WHERE booking_id = %s", (booking_id,))
@@ -270,8 +333,20 @@ def execute_booking(
     ticket_type: str = "single",
 ) -> tuple[bool, dict | str]:
     """
-    Executes booking within a transaction block. Evaluates auto-assignment 
-    if seat_id is 'any'. Rolls back both booking and payment on failure.
+    Executes a booking within a transaction block, handling auto-seat assignment if requested.
+
+    Args:
+        user_id: The ID of the user making the booking.
+        schedule_id: The ID of the selected train schedule.
+        origin_station_id: The ID of the departure station.
+        destination_station_id: The ID of the arrival station.
+        travel_date: The date of travel.
+        fare_class: The class of the fare.
+        seat_id: The specific seat ID, or 'any' for auto-assignment.
+        ticket_type: The type of ticket (default is 'single').
+
+    Returns:
+        A tuple containing a boolean success flag and either a result dictionary or an error message string.
     """
     fare_info = query_national_rail_fare(schedule_id, fare_class, 0)
     if not fare_info: 
@@ -326,8 +401,14 @@ def execute_booking(
 
 def execute_cancellation(booking_id: str, user_id: str) -> tuple[bool, dict | str]:
     """
-    Cancels a booking. Implements a simplified refund policy based on 
-    service type (Express vs Normal) and time remaining until travel date.
+    Cancels an existing booking and calculates the refund amount based on service policy.
+
+    Args:
+        booking_id: The ID of the booking to cancel.
+        user_id: The ID of the user requesting the cancellation.
+
+    Returns:
+        A tuple containing a boolean success flag and either a result dictionary or an error message string.
     """
     with _connect() as conn:
         try:
@@ -387,18 +468,25 @@ def register_user(
     secret_question: str,
     secret_answer: str,
 ) -> tuple[bool, str]:
+    # ... (Docstring 保持不變)
     u_id = "U-" + "".join(random.choices(string.digits, k=4))
-    
-    # Concatenates first and last name since schema only defines a single 'name' column
     full_name = f"{first_name} {surname}"
+    
+    # 🟢 產出專屬鹽巴並加密
+    salt = os.urandom(16).hex()
+    password_hash = hashlib.sha256((password + salt).encode('utf-8')).hexdigest()
     
     try:
         with _connect() as conn:
             with conn.cursor() as cur:
-                # Password stored as plaintext strictly for educational scaffold requirements
+                # 🟢 寫入 password_hash 和 salt
                 cur.execute(
-                    "INSERT INTO users (user_id, name, email, password) VALUES (%s, %s, %s, %s)", 
-                    (u_id, full_name, email, password)
+                    """
+                    INSERT INTO users 
+                    (user_id, name, email, password_hash, salt, year_of_birth, secret_question, secret_answer) 
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """, 
+                    (u_id, full_name, email, password_hash, salt, year_of_birth, secret_question, secret_answer)
                 )
         return True, u_id
     except psycopg2.IntegrityError:
@@ -408,28 +496,62 @@ def register_user(
 
 
 def login_user(email: str, password: str) -> Optional[dict]:
+    # ... (Docstring 保持不變)
     with _connect() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT * FROM users WHERE email = %s AND password = %s", (email, password))
+            # 🟢 1. 先用 email 把使用者的加密密碼和鹽巴撈出來
+            cur.execute("SELECT * FROM users WHERE email = %s", (email,))
             row = cur.fetchone()
-            return dict(row) if row else None
-
+            
+            if not row:
+                return None  # 找不到這個信箱
+            
+            # 🟢 2. 把他剛輸入的密碼，加上資料庫裡的鹽巴，用一樣的方式算一次
+            test_hash = hashlib.sha256((password + row['salt']).encode('utf-8')).hexdigest()
+            
+            # 🟢 3. 比對算出來的結果跟資料庫裡的是不是一樣
+            if test_hash == row['password_hash']:
+                return dict(row)  # 密碼正確，允許登入！
+            else:
+                return None       # 密碼錯誤
 
 def get_user_secret_question(email: str) -> Optional[str]:
-    # Dummy return value: schema lacks secret_question column
-    return "What is your pet's name?" 
+    # 修正：直接去資料庫查詢使用者的安全提問
+    with _connect() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT secret_question FROM users WHERE email = %s", (email,))
+            row = cur.fetchone()
+            return row["secret_question"] if row else None
+
 
 def verify_secret_answer(email: str, answer: str) -> bool:
-    # Always true: schema lacks secret_answer column
-    return True 
+    # 修正：去資料庫比對安全提示答案（轉小寫並去空白，增加容錯率）
+    with _connect() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT secret_answer FROM users WHERE email = %s", (email,))
+            row = cur.fetchone()
+            if row and row["secret_answer"].strip().lower() == answer.strip().lower():
+                return True
+            return False
+
 
 def update_password(email: str, new_password: str) -> bool:
+    """
+    Updates a user's password with a new salt and hash.
+    """
+    # 🟢 產出新的專屬鹽巴並加密新密碼
+    salt = os.urandom(16).hex()
+    password_hash = hashlib.sha256((new_password + salt).encode('utf-8')).hexdigest()
+    
     with _connect() as conn:
         with conn.cursor() as cur:
-            cur.execute("UPDATE users SET password = %s WHERE email = %s", (new_password, email))
+            # 🟢 更新密碼雜湊值與新鹽巴
+            cur.execute(
+                "UPDATE users SET password_hash = %s, salt = %s WHERE email = %s", 
+                (password_hash, salt, email)
+            )
             return cur.rowcount > 0
-
-
+        
 # ── VECTOR / RAG QUERIES — do not modify ─────────────────────────────────────
 
 def query_policy_vector_search(embedding: list[float], top_k: int = VECTOR_TOP_K) -> list[dict]:

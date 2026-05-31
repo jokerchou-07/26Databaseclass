@@ -10,6 +10,7 @@ Safe to re-run: implement your inserts with ON CONFLICT DO NOTHING.
 """
 
 import json
+import hashlib
 import os
 import sys
 
@@ -124,39 +125,64 @@ def seed_seat_layouts(cur):
     rows = []
     for layout in data:
         schedule_id = layout.get("schedule_id")
-        for seat in layout.get("seats", []):
-            coach = seat.get("coach")
-            seat_num = seat.get("seat_number")
-            layout_id = f"LAYOUT_{schedule_id}_{coach}_{seat_num}"
-            rows.append((
-                layout_id,
-                schedule_id,
-                coach,
-                seat_num,
-                seat.get("fare_class")
-            ))
+        
+        # 1. 先進入第一層：抓取 coaches (車廂)
+        for coach_data in layout.get("coaches", []):
+            coach = coach_data.get("coach")
+            fare_class = coach_data.get("fare_class")
+            
+            # 2. 再進入第二層：抓取 seats (座位)
+            for seat in coach_data.get("seats", []):
+                # 注意：JSON 裡的 key 是 seat_id，不是 seat_number
+                seat_num = seat.get("seat_id") 
+                
+                layout_id = f"LAYOUT_{schedule_id}_{coach}_{seat_num}"
+                rows.append((
+                    layout_id,
+                    schedule_id,
+                    coach,
+                    seat_num,
+                    fare_class
+                ))
+                
     n = insert_many(cur, "national_rail_seat_layouts", 
                     ["layout_id", "schedule_id", "coach_number", "seat_number", "fare_class"], rows)
     print(f"  national_rail_seat_layouts: {n} rows")
-
 
 def seed_users(cur):
     data = load("registered_users.json")
     rows = []
     for u in data:
-        # 嘗試抓取 "name"，如果沒有，試試看 "full_name"，再沒有就給預設值
-        user_name = u.get("name") or u.get("full_name") or u.get("first_name") or "Unknown User"
+        # 1. 處理姓名 (完美相容各種 JSON 格式)
+        user_name = u.get("name") or u.get("full_name") or f"{u.get('first_name', '')} {u.get('surname', '')}".strip() or "Unknown User"
         
+        # 2. 處理團隊規定的新欄位 (如果 JSON 裡沒有，就塞預設值給它)
+        year_of_birth = u.get("year_of_birth") or 1990
+        secret_question = u.get("secret_question") or "What is your favorite color?"
+        secret_answer = u.get("secret_answer") or "Blue"
+        
+        # 3. 資安升級：處理密碼加鹽與雜湊
+        raw_password = u.get("password", "default_pass") # 優先抓 JSON 裡的真實密碼
+        salt = os.urandom(16).hex()                      # 產出 16 bytes 的專屬鹽巴
+        password_hash = hashlib.sha256((raw_password + salt).encode('utf-8')).hexdigest() # 雜湊處理
+        
+        # 4. 把所有資料裝箱
         rows.append((
             u.get("user_id"), 
             user_name, 
             u.get("email"), 
-            "default_pass"
+            password_hash,   # 👈 寫入加密後的亂碼密碼
+            salt,            # 👈 寫入鹽巴
+            year_of_birth,   # 👈 新規定欄位 1
+            secret_question, # 👈 新規定欄位 2
+            secret_answer    # 👈 新規定欄位 3
         ))
         
-    n = insert_many(cur, "users", ["user_id", "name", "email", "password"], rows)
+    # 5. 執行寫入，這裡的欄位必須跟你的 schema.sql 完全一致！
+    n = insert_many(cur, "users", 
+                    ["user_id", "name", "email", "password_hash", "salt", "year_of_birth", "secret_question", "secret_answer"], 
+                    rows)
     print(f"  users: {n} rows")
-
 
 def seed_national_rail_bookings(cur):
     data = load("bookings.json")
@@ -174,7 +200,7 @@ def seed_national_rail_bookings(cur):
         )
         for b in data
     ]
-    n = insert_many(cur,"national_rail_bookings",
+    n = insert_many(cur,"bookings",
                     ["booking_id", "user_id", "schedule_id", "travel_date", "departure_time", "carriage_number", "seat_number", "amount_usd", "status"], rows)
     print(f"  bookings: {n} rows")
 

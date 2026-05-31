@@ -120,7 +120,7 @@ def do_login(email: str, password: str):
             gr.update(visible=True),
         )
 
-    display_name = f"{user['first_name']} {user['surname']}"
+    display_name = user.get("name", "User")
     return (
         gr.update(value="", visible=False),
         user["email"],
