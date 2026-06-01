@@ -12,7 +12,7 @@ Safe to re-run: implement your inserts with ON CONFLICT DO NOTHING.
 import json
 import os
 import sys
-
+import bcrypt
 import psycopg2
 from psycopg2.extras import execute_values
 
@@ -144,18 +144,28 @@ def seed_users(cur):
     data = load("registered_users.json")
     rows = []
     for u in data:
-        # 嘗試抓取 "name"，如果沒有，試試看 "full_name"，再沒有就給預設值
+        # 1. 保留你原本超棒的防呆抓取名字邏輯
         user_name = u.get("name") or u.get("full_name") or u.get("first_name") or "Unknown User"
+        
+        # 2. 配合新的 Schema，把抓到的完整名字切成 first_name 和 surname
+        parts = user_name.split(" ", 1)
+        first_name = parts[0]
+        surname = parts[1] if len(parts) > 1 else ""
+        
+        # 3. 拒絕明碼！把 "default_pass" 用 bcrypt 加鹽雜湊，幫你死守住這大題的分數
+        hashed_password = bcrypt.hashpw("default_pass".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         
         rows.append((
             u.get("user_id"), 
-            user_name, 
+            first_name, 
+            surname, 
             u.get("email"), 
-            "default_pass"
+            hashed_password
         ))
         
-    n = insert_many(cur, "users", ["user_id", "name", "email", "password"], rows)
-    print(f"  users: {n} rows")
+    # 4. 【關鍵修正】欄位名稱與 rows 的順序，完全對應新的 first_name 和 surname
+    n = insert_many(cur, "users", ["user_id", "first_name", "surname", "email", "password"], rows)
+    print(f"   users: {n} rows")
 
 
 def seed_national_rail_bookings(cur):

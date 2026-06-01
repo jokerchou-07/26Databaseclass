@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS national_rail_stations (
 -- 註冊使用者表
 CREATE TABLE IF NOT EXISTS users (
     user_id      VARCHAR(50)  PRIMARY KEY,
-    name         VARCHAR(100) NOT NULL,
+    first_name   VARCHAR(50)  NOT NULL,   -- seperate name
+    surname      VARCHAR(50)  NOT NULL,   
     email        VARCHAR(150) UNIQUE NOT NULL,
     password     VARCHAR(255) NOT NULL,
     created_at   TIMESTAMPTZ  DEFAULT NOW()

@@ -387,18 +387,17 @@ def register_user(
     secret_answer: str,
 ) -> tuple[bool, str]:
     u_id = "U-" + "".join(random.choices(string.digits, k=4))
-    full_name = f"{first_name} {surname}"
     
-
+    # 用 bcrypt 產生加密密碼
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     
     try:
         with _connect() as conn:
             with conn.cursor() as cur:
-               
+                # 這裡對應新的 schema，直接存入 first_name 和 surname
                 cur.execute(
-                    "INSERT INTO users (user_id, name, email, password) VALUES (%s, %s, %s, %s)", 
-                    (u_id, full_name, email, hashed_password)
+                    "INSERT INTO users (user_id, first_name, surname, email, password) VALUES (%s, %s, %s, %s, %s)", 
+                    (u_id, first_name, surname, email, hashed_password)
                 )
         return True, u_id
     except psycopg2.IntegrityError:
@@ -415,15 +414,22 @@ def login_user(email: str, password: str) -> Optional[dict]:
             
             if not row:
                 return None
-         
+                
             hashed_pwd_from_db = row['password']
             
             if isinstance(hashed_pwd_from_db, str):
                 hashed_pwd_from_db = hashed_pwd_from_db.encode('utf-8')
                 
-           
+            #check password
             if bcrypt.checkpw(password.encode('utf-8'), hashed_pwd_from_db):
-                return dict(row)
+                user_dict = dict(row)
+                
+                # 移除 password
+                if 'password' in user_dict:
+                    del user_dict['password']
+                    
+                # Dummy return value: schema lacks secret_question column
+                return user_dict
             else:
                 return None
 
