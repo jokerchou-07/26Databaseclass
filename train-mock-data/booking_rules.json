@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "last_updated": "2024-01-01",
+  "last_updated": "2026-05-31",
   "national_rail": {
     "advance_booking": {
       "max_days_in_advance": 90,
@@ -44,10 +44,11 @@
       }
     },
     "group_fares": {
+      "policy_code": "BR015",
       "minimum_group_size": 10,
-      "discount_percent": 10,
+      "discount_percent": 20,
       "applicable_class": "standard",
-      "conditions": "Group discount applies to standard class single and return tickets only. All group members must travel on the same service. Discount is applied at the time of booking when 10 or more tickets are purchased in a single transaction.",
+      "conditions": "BR015: Group bookings consisting of 10 or more passengers traveling together on the same National Rail service qualify for a 20% discount on standard advance single tickets. Group reservations must be submitted at least 7 days prior to travel and settled in a single transaction.",
       "not_applicable": "Group discount does not apply to first class tickets, express services, or day passes."
     },
     "payment": {

@@ -170,5 +170,22 @@
       }
     ],
     "exclusions": "Delays caused by third-party events (extreme weather, security incidents, government directives, or passenger-caused incidents) are not eligible for compensation."
+  },
+  {
+    "policy_id": "RF009",
+    "label": "Engineering Works and Disruption Refunds",
+    "applies_to": {
+      "network_type": "all",
+      "ticket_types": ["advance", "single", "return"]
+    },
+    "compensation_rules": [
+      {
+        "rule_id": "RF009_R1",
+        "condition": "Planned engineering works or service disruptions causing direct train cancellations or delays exceeding 60 minutes",
+        "compensation": "100% full refund on advance tickets without any administration fee",
+        "how_to_claim": "Lodge claim within 14 days of the original decision or disrupted travel date"
+      }
+    ],
+    "notes": "Applies directly when disruptions are caused by maintenance or operator-planned engineering works."
   }
 ]
