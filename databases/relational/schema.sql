@@ -20,15 +20,14 @@ CREATE TABLE IF NOT EXISTS national_rail_stations (
 
 -- 註冊使用者表
 CREATE TABLE IF NOT EXISTS users (
-    user_id         VARCHAR(50)  PRIMARY KEY,
-    name            VARCHAR(100) NOT NULL,
-    email           VARCHAR(150) UNIQUE NOT NULL,
-    password_hash   VARCHAR(256) NOT NULL,
-    salt            VARCHAR(100) NOT NULL,
-    year_of_birth   INT,                     -- 新增：出生年份
-    secret_question VARCHAR(255),            -- 新增：安全提問
-    secret_answer   VARCHAR(255),            -- 新增：安全提示答案
-    created_at      TIMESTAMPTZ  DEFAULT NOW()
+
+    user_id      VARCHAR(50)  PRIMARY KEY,
+    first_name   VARCHAR(50)  NOT NULL,   -- seperate name
+    surname      VARCHAR(50)  NOT NULL,   
+    email        VARCHAR(150) UNIQUE NOT NULL,
+    password     VARCHAR(255) NOT NULL,
+    created_at   TIMESTAMPTZ  DEFAULT NOW()
+
 );
 
 -- ============================================================

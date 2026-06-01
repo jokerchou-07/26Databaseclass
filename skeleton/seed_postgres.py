@@ -13,7 +13,7 @@ import json
 import hashlib
 import os
 import sys
-
+import bcrypt
 import psycopg2
 from psycopg2.extras import execute_values
 
@@ -153,8 +153,19 @@ def seed_users(cur):
     data = load("registered_users.json")
     rows = []
     for u in data:
-        # 1. 處理姓名 (完美相容各種 JSON 格式)
-        user_name = u.get("name") or u.get("full_name") or f"{u.get('first_name', '')} {u.get('surname', '')}".strip() or "Unknown User"
+
+        # 1. 抓取完整名字並切開
+        user_name = u.get("name") or u.get("full_name") or u.get("first_name") or "Unknown User"
+        parts = user_name.split(" ", 1)
+        first_name = parts[0]
+        surname = parts[1] if len(parts) > 1 else ""
+        
+        # 2. 【保命關鍵】抓取 JSON 裡面的真實密碼 (例如 "BenLim85")
+        original_password = u.get("password")
+        
+        # 3. 把抓到的真實密碼，用 bcrypt 加密！
+        hashed_password = bcrypt.hashpw(original_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
         
         # 2. 處理團隊規定的新欄位 (如果 JSON 裡沒有，就塞預設值給它)
         year_of_birth = u.get("year_of_birth") or 1990
@@ -169,20 +180,16 @@ def seed_users(cur):
         # 4. 把所有資料裝箱
         rows.append((
             u.get("user_id"), 
-            user_name, 
+            first_name, 
+            surname, 
             u.get("email"), 
-            password_hash,   # 👈 寫入加密後的亂碼密碼
-            salt,            # 👈 寫入鹽巴
-            year_of_birth,   # 👈 新規定欄位 1
-            secret_question, # 👈 新規定欄位 2
-            secret_answer    # 👈 新規定欄位 3
+            hashed_password
         ))
         
-    # 5. 執行寫入，這裡的欄位必須跟你的 schema.sql 完全一致！
-    n = insert_many(cur, "users", 
-                    ["user_id", "name", "email", "password_hash", "salt", "year_of_birth", "secret_question", "secret_answer"], 
-                    rows)
-    print(f"  users: {n} rows")
+    # 4. 寫入資料庫
+    n = insert_many(cur, "users", ["user_id", "first_name", "surname", "email", "password"], rows)
+    print(f"   users: {n} rows")
+
 
 def seed_national_rail_bookings(cur):
     data = load("bookings.json")

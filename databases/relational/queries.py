@@ -12,6 +12,7 @@ import string
 import hashlib
 import os
 import re
+import bcrypt  #add on 6/1
 from datetime import datetime, timezone, date
 from typing import Optional
 
@@ -274,7 +275,22 @@ def query_user_profile(user_email: str) -> Optional[dict]:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT * FROM users WHERE email = %s", (user_email,))
             row = cur.fetchone()
-            return dict(row) if row else None
+            
+            if not row:
+                return None
+                
+            user_dict = dict(row)
+            
+            # 為了安撫 agent.py，我們把它要的 full_name 拼回來給它
+            first = user_dict.get('first_name', '')
+            last = user_dict.get('surname', '')
+            user_dict['full_name'] = f"{first} {last}".strip()
+            
+            # 順手把密碼從記憶體裡銷毀，不讓它流到 AI 代理身上
+            if 'password' in user_dict:
+                del user_dict['password']
+                
+            return user_dict
 
 
 def query_user_bookings(user_email: str) -> dict:
@@ -470,23 +486,17 @@ def register_user(
 ) -> tuple[bool, str]:
     # ... (Docstring 保持不變)
     u_id = "U-" + "".join(random.choices(string.digits, k=4))
+
     full_name = f"{first_name} {surname}"
-    
-    # 🟢 產出專屬鹽巴並加密
-    salt = os.urandom(16).hex()
-    password_hash = hashlib.sha256((password + salt).encode('utf-8')).hexdigest()
-    
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')    
     try:
         with _connect() as conn:
             with conn.cursor() as cur:
-                # 🟢 寫入 password_hash 和 salt
+                # 這裡對應新的 schema，直接存入 first_name 和 surname
                 cur.execute(
-                    """
-                    INSERT INTO users 
-                    (user_id, name, email, password_hash, salt, year_of_birth, secret_question, secret_answer) 
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    """, 
-                    (u_id, full_name, email, password_hash, salt, year_of_birth, secret_question, secret_answer)
+                    "INSERT INTO users (user_id, first_name, surname, email, password) VALUES (%s, %s, %s, %s, %s)", 
+                    (u_id, first_name, surname, email, hashed_password)
+
                 )
         return True, u_id
     except psycopg2.IntegrityError:
@@ -499,21 +509,31 @@ def login_user(email: str, password: str) -> Optional[dict]:
     # ... (Docstring 保持不變)
     with _connect() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            # 🟢 1. 先用 email 把使用者的加密密碼和鹽巴撈出來
+
             cur.execute("SELECT * FROM users WHERE email = %s", (email,))
             row = cur.fetchone()
             
             if not row:
-                return None  # 找不到這個信箱
+                return None
+                
+            hashed_pwd_from_db = row['password']
             
-            # 🟢 2. 把他剛輸入的密碼，加上資料庫裡的鹽巴，用一樣的方式算一次
-            test_hash = hashlib.sha256((password + row['salt']).encode('utf-8')).hexdigest()
-            
-            # 🟢 3. 比對算出來的結果跟資料庫裡的是不是一樣
-            if test_hash == row['password_hash']:
-                return dict(row)  # 密碼正確，允許登入！
+            if isinstance(hashed_pwd_from_db, str):
+                hashed_pwd_from_db = hashed_pwd_from_db.encode('utf-8')
+                
+            #check password
+            if bcrypt.checkpw(password.encode('utf-8'), hashed_pwd_from_db):
+                user_dict = dict(row)
+                
+                # 移除 password
+                if 'password' in user_dict:
+                    del user_dict['password']
+                    
+                # Dummy return value: schema lacks secret_question column
+                return user_dict
             else:
-                return None       # 密碼錯誤
+                return None
+
 
 def get_user_secret_question(email: str) -> Optional[str]:
     # 修正：直接去資料庫查詢使用者的安全提問
