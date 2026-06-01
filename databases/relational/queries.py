@@ -230,7 +230,22 @@ def query_user_profile(user_email: str) -> Optional[dict]:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT * FROM users WHERE email = %s", (user_email,))
             row = cur.fetchone()
-            return dict(row) if row else None
+            
+            if not row:
+                return None
+                
+            user_dict = dict(row)
+            
+            # 為了安撫 agent.py，我們把它要的 full_name 拼回來給它
+            first = user_dict.get('first_name', '')
+            last = user_dict.get('surname', '')
+            user_dict['full_name'] = f"{first} {last}".strip()
+            
+            # 順手把密碼從記憶體裡銷毀，不讓它流到 AI 代理身上
+            if 'password' in user_dict:
+                del user_dict['password']
+                
+            return user_dict
 
 
 def query_user_bookings(user_email: str) -> dict:
