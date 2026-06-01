@@ -53,7 +53,8 @@ def query_shortest_route(
     destination_id: str,
     network: str = "auto",
 ) -> dict:
-    # 修正：拔除 :Station 標籤，並更新正確的 relationship types
+    """Find the fastest route between two stations using Dijkstra's algorithm."""
+    # Modified: Removed node labels to support both networks and updated relationship types
     query = """
     MATCH (start {station_id: $origin_id})
     MATCH (end {station_id: $destination_id})
@@ -85,9 +86,10 @@ def query_cheapest_route(
     network: str = "auto",
     fare_class: str = "standard",
 ) -> dict:
+    """Find the cheapest route based on the selected fare class."""
     weight_prop = "fare_first" if fare_class == "first" else "fare_standard"
     
-    # 修正：拔除 :Station 標籤，並更新正確的 relationship types
+    # Modified: Removed node labels to support both networks and updated relationship types
     query = f"""
     MATCH (start {{station_id: $origin_id}})
     MATCH (end {{station_id: $destination_id}})
@@ -118,7 +120,8 @@ def query_alternative_routes(
     network: str = "auto",
     max_routes: int = 3,
 ) -> list[list[dict]]:
-    # 修正：拔除 :Station 標籤，並更新正確的 relationship types
+    """Find alternative routes that completely bypass a specific station."""
+    # Modified: Removed node labels to support both networks and updated relationship types
     query = """
     MATCH (start {station_id: $origin_id})
     MATCH (end {station_id: $destination_id})
@@ -137,13 +140,15 @@ def query_alternative_routes(
 # ── CROSS-NETWORK INTERCHANGE PATH ───────────────────────────────────────────
 
 def query_interchange_path(origin_id: str, destination_id: str) -> dict:
+    """Wrapper function to find cross-network paths."""
     return query_shortest_route(origin_id, destination_id)
 
 
 # ── DELAY RIPPLE ANALYSIS ─────────────────────────────────────────────────────
 
 def query_delay_ripple(delayed_station_id: str, hops: int = 2) -> list[dict]:
-    # 修正：拔除 :Station 標籤，更新正確的 relationship types
+    """Identify all surrounding stations affected by a delay within N hops."""
+    # Modified: Removed node labels and updated relationship types
     query = f"""
     MATCH p = shortestPath((start {{station_id: $delayed_station_id}})-[:METRO_LINK|RAIL_LINK|INTERCHANGE_TO*1..{hops}]-(affected))
     WHERE affected.station_id <> $delayed_station_id
@@ -159,7 +164,8 @@ def query_delay_ripple(delayed_station_id: str, hops: int = 2) -> list[dict]:
 # ── STATION CONNECTIONS ───────────────────────────────────────────────────────
 
 def query_station_connections(station_id: str) -> list[dict]:
-    # 修正：拔除 :Station 標籤，更新正確的 relationship types
+    """List all direct physical or interchange connections for a given station."""
+    # Modified: Removed node labels and updated relationship types
     query = """
     MATCH (start {station_id: $station_id})-[r:METRO_LINK|RAIL_LINK|INTERCHANGE_TO]-(connected)
     RETURN 
