@@ -144,16 +144,17 @@ def seed_users(cur):
     data = load("registered_users.json")
     rows = []
     for u in data:
-        # 1. 保留你原本超棒的防呆抓取名字邏輯
+        # 1. 抓取完整名字並切開
         user_name = u.get("name") or u.get("full_name") or u.get("first_name") or "Unknown User"
-        
-        # 2. 配合新的 Schema，把抓到的完整名字切成 first_name 和 surname
         parts = user_name.split(" ", 1)
         first_name = parts[0]
         surname = parts[1] if len(parts) > 1 else ""
         
-        # 3. 拒絕明碼！把 "default_pass" 用 bcrypt 加鹽雜湊，幫你死守住這大題的分數
-        hashed_password = bcrypt.hashpw("default_pass".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        # 2. 【保命關鍵】抓取 JSON 裡面的真實密碼 (例如 "BenLim85")
+        original_password = u.get("password")
+        
+        # 3. 把抓到的真實密碼，用 bcrypt 加密！
+        hashed_password = bcrypt.hashpw(original_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         
         rows.append((
             u.get("user_id"), 
@@ -163,7 +164,7 @@ def seed_users(cur):
             hashed_password
         ))
         
-    # 4. 【關鍵修正】欄位名稱與 rows 的順序，完全對應新的 first_name 和 surname
+    # 4. 寫入資料庫
     n = insert_many(cur, "users", ["user_id", "first_name", "surname", "email", "password"], rows)
     print(f"   users: {n} rows")
 
