@@ -10,6 +10,7 @@ import json
 import random
 import string
 import re
+import bcrypt  #add on 6/1
 from datetime import datetime, timezone, date
 from typing import Optional
 
@@ -386,17 +387,18 @@ def register_user(
     secret_answer: str,
 ) -> tuple[bool, str]:
     u_id = "U-" + "".join(random.choices(string.digits, k=4))
-    
-    # Concatenates first and last name since schema only defines a single 'name' column
     full_name = f"{first_name} {surname}"
+    
+
+    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     
     try:
         with _connect() as conn:
             with conn.cursor() as cur:
-                # Password stored as plaintext strictly for educational scaffold requirements
+               
                 cur.execute(
                     "INSERT INTO users (user_id, name, email, password) VALUES (%s, %s, %s, %s)", 
-                    (u_id, full_name, email, password)
+                    (u_id, full_name, email, hashed_password)
                 )
         return True, u_id
     except psycopg2.IntegrityError:
@@ -408,9 +410,22 @@ def register_user(
 def login_user(email: str, password: str) -> Optional[dict]:
     with _connect() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT * FROM users WHERE email = %s AND password = %s", (email, password))
+            cur.execute("SELECT * FROM users WHERE email = %s", (email,))
             row = cur.fetchone()
-            return dict(row) if row else None
+            
+            if not row:
+                return None
+         
+            hashed_pwd_from_db = row['password']
+            
+            if isinstance(hashed_pwd_from_db, str):
+                hashed_pwd_from_db = hashed_pwd_from_db.encode('utf-8')
+                
+           
+            if bcrypt.checkpw(password.encode('utf-8'), hashed_pwd_from_db):
+                return dict(row)
+            else:
+                return None
 
 
 def get_user_secret_question(email: str) -> Optional[str]:
