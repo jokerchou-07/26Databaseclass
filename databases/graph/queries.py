@@ -93,7 +93,7 @@ def query_cheapest_route(
     query = f"""
     MATCH (start {{station_id: $origin_id}})
     MATCH (end {{station_id: $destination_id}})
-    CALL apoc.algo.dijkstra(start, end, 'METRO_LINK|RAIL_LINK|INTERCHANGE_TO', '{weight_prop}') YIELD path, weight
+    CALL apoc.algo.dijkstra(start, end, 'METRO_LINK|RAIL_LINK|INTERCHANGE_TO', '{weight_prop}', 10.0) YIELD path, weight
     RETURN [node in nodes(path) | {{station_id: node.station_id, name: node.name}}] AS stations, weight AS total_fare_usd
     """
     with _driver() as driver:
@@ -165,7 +165,6 @@ def query_delay_ripple(delayed_station_id: str, hops: int = 2) -> list[dict]:
 
 def query_station_connections(station_id: str) -> list[dict]:
     """List all direct physical or interchange connections for a given station."""
-    # Modified: Removed node labels and updated relationship types
     query = """
     MATCH (start {station_id: $station_id})-[r:METRO_LINK|RAIL_LINK|INTERCHANGE_TO]-(connected)
     RETURN 
@@ -178,21 +177,5 @@ def query_station_connections(station_id: str) -> list[dict]:
         with driver.session() as session:
             result = session.run(query, station_id=station_id)
             return [dict(record) for record in result]
-    """
-    List all direct connections from a given station.
 
-    Args:
-        station_id: e.g. "MS01" or "NR01"
-    """
-    query = """
-    MATCH (start:Station {station_id: $station_id})-[r:CONNECTS_TO|INTERCHANGES_WITH]-(connected:Station)
-    RETURN 
-        connected.station_id AS station_id, 
-        connected.name AS name, 
-        type(r) AS connection_type, 
-        r.travel_time_min AS travel_time_min
-    """
-    with _driver() as driver:
-        with driver.session() as session:
-            result = session.run(query, station_id=station_id)
-            return [dict(record) for record in result]
+

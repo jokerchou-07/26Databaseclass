@@ -87,13 +87,31 @@ def seed_metro_schedules(cur):
 
     stop_rows = []
     for schedule in data:
-        for stop in schedule.get("stops", []):
+        # 1. Match the exact key from the provided JSON
+        stops_list = schedule.get("stops_in_order", [])
+        
+        # 2. Get the base starting time of the train (e.g., "05:30")
+        base_time_str = schedule.get("first_train_time", "06:00")
+        base_h, base_m = map(int, base_time_str.split(":"))
+        
+        for index, station_id in enumerate(stops_list):
+            # 3. Fetch the estimated travel time
+            travel_times = schedule.get("travel_time_from_origin_min", {})
+            travel_time = travel_times.get(station_id, 0)
+            
+            # 4. Calculate actual valid TIME string (HH:MM:SS) for PostgreSQL
+            total_m = base_m + travel_time
+            arr_h = (base_h + (total_m // 60)) % 24
+            arr_m = total_m % 60
+            arrival_time_str = f"{arr_h:02d}:{arr_m:02d}:00"
+
             stop_rows.append((
                 schedule.get("schedule_id"),
-                stop.get("station_id"),
-                stop.get("arrival_time"),
-                stop.get("stop_order")
+                station_id,             
+                arrival_time_str,       # 👈 Insert the valid HH:MM:SS string here!
+                index + 1               
             ))
+            
     n2 = insert_many(cur, "metro_schedule_stops", 
                     ["schedule_id", "station_id", "arrival_time", "stop_order"], stop_rows)
     print(f"  metro_schedule_stops: {n2} rows")
