@@ -16,6 +16,7 @@ import sys
 import bcrypt
 import psycopg2
 from psycopg2.extras import execute_values
+from datetime import datetime, timedelta
 
 # ── resolve paths ────────────────────────────────────────────────────────────
 SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -78,13 +79,16 @@ def seed_national_rail_stations(cur):
 
 def seed_metro_schedules(cur):
     data = load("metro_schedules.json")
+    
+    # 1. 寫入捷運主班次表，動態對應 JSON 裡的真實欄位
     schedule_rows = [
-        (s.get("schedule_id"), s.get("line", "M1"), 5, 2.50) 
+        (s.get("schedule_id"), s.get("line", "M1"), s.get("frequency_min", 5), s.get("base_fare_usd", 0.80)) 
         for s in data
     ]
     n1 = insert_many(cur, "metro_schedules", ["schedule_id", "line", "frequency_min", "fare"], schedule_rows)
     print(f"  metro_schedules: {n1} rows")
 
+    # 2. 【核心修復】解析扁平化的 stops 資料並計算抵達時間
     stop_rows = []
     for schedule in data:
         # 1. Match the exact key from the provided JSON
@@ -139,17 +143,34 @@ def seed_national_rail_schedules(cur):
 
 
 def seed_seat_layouts(cur):
+    # 💡 關鍵第一步：動態讀取火車總班次表，抓出「所有實際存在的班次 ID」
+    schedules_data = load("national_rail_schedules.json")
+    all_schedules = [s.get("schedule_id") for s in schedules_data if s.get("schedule_id")]
+
     data = load("national_rail_seat_layouts.json")
     rows = []
+    
+    seeded_schedules = set()   # 記錄在座位檔中已經處理過的班次 ID
+    default_template = None    # 用來暫存第一個看到的車廂座位範本
+
+    # 1. 進入你原本的迴圈：處理 JSON 裡面原本就有的配置
     for layout in data:
         schedule_id = layout.get("schedule_id")
+        if not schedule_id:
+            continue
         
-        # 1. 先進入第一層：抓取 coaches (車廂)
+        seeded_schedules.add(schedule_id) # 標記這個班次已經有座位了
+        
+        # 💡 動態捕捉第一個有資料的車廂配置，當作萬用備份範本
+        if not default_template and layout.get("coaches"):
+            default_template = layout.get("coaches")
+        
+        # 先進入第一層：抓取 coaches (車廂)
         for coach_data in layout.get("coaches", []):
             coach = coach_data.get("coach")
             fare_class = coach_data.get("fare_class")
             
-            # 2. 再進入第二層：抓取 seats (座位)
+            # 再進入第二層：抓取 seats (座位)
             for seat in coach_data.get("seats", []):
                 # 注意：JSON 裡的 key 是 seat_id，不是 seat_number
                 seat_num = seat.get("seat_id") 
@@ -162,6 +183,26 @@ def seed_seat_layouts(cur):
                     seat_num,
                     fare_class
                 ))
+                
+    # 2. 🚀 智慧防禦機制：比對總班次表，只要發現漏掉的班次，自動拿範本解開並補齊
+    for sch_id in all_schedules:
+        if sch_id not in seeded_schedules and default_template:
+            # 沿用你原本熟悉的兩層解開邏輯，只是把 schedule_id 換成漏掉的 sch_id
+            for coach_data in default_template:
+                coach = coach_data.get("coach")
+                fare_class = coach_data.get("fare_class")
+                
+                for seat in coach_data.get("seats", []):
+                    seat_num = seat.get("seat_id") 
+                    
+                    layout_id = f"LAYOUT_{sch_id}_{coach}_{seat_num}"
+                    rows.append((
+                        layout_id,
+                        sch_id,
+                        coach,
+                        seat_num,
+                        fare_class
+                    ))
                 
     n = insert_many(cur, "national_rail_seat_layouts", 
                     ["layout_id", "schedule_id", "coach_number", "seat_number", "fare_class"], rows)
