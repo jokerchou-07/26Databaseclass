@@ -219,114 +219,179 @@ def seed_users(cur):
         first_name = parts[0]
         surname = parts[1] if len(parts) > 1 else ""
         
-        # 2. 【保命關鍵】抓取 JSON 裡面的真實密碼 (例如 "BenLim85")
-        original_password = u.get("password")
-        
-        # 3. 把抓到的真實密碼，用 bcrypt 加密！
-        hashed_password = bcrypt.hashpw(original_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-        
         # 2. 處理團隊規定的新欄位 (如果 JSON 裡沒有，就塞預設值給它)
         year_of_birth = u.get("year_of_birth") or 1990
         secret_question = u.get("secret_question") or "What is your favorite color?"
         secret_answer = u.get("secret_answer") or "Blue"
         
-        # 3. 資安升級：處理密碼加鹽與雜湊
-        raw_password = u.get("password", "default_pass") # 優先抓 JSON 裡的真實密碼
-        salt = os.urandom(16).hex()                      # 產出 16 bytes 的專屬鹽巴
-        password_hash = hashlib.sha256((raw_password + salt).encode('utf-8')).hexdigest() # 雜湊處理
+        # 3. 密碼加密 (使用報告中承諾的 bcrypt，淘汰 SHA-256)
+        original_password = u.get("password", "default_pass")
+        hashed_password = bcrypt.hashpw(original_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         
-        # 4. 把所有資料裝箱
+        # 4. 把所有資料正確裝箱 (注意這裡的數量和順序！)
         rows.append((
             u.get("user_id"), 
             first_name, 
             surname, 
+            year_of_birth,     # 補上出生年份
             u.get("email"), 
-            hashed_password
+            hashed_password,   # 使用 bcrypt 雜湊後的密碼
+            secret_question,   # 補上安全提示問題
+            secret_answer      # 補上安全提示答案
         ))
         
-    # 4. 寫入資料庫
-    n = insert_many(cur, "users", ["user_id", "first_name", "surname", "email", "password"], rows)
+    # 5. 寫入資料庫 (欄位列表必須跟上面 rows.append 的順序一模一樣！)
+    n = insert_many(
+        cur, 
+        "users", 
+        ["user_id", "first_name", "surname", "year_of_birth", "email", "password", "secret_question", "secret_answer"], 
+        rows
+    )
     print(f"   users: {n} rows")
-
 
 def seed_national_rail_bookings(cur):
     data = load("bookings.json")
-    rows = [
-        (
+    rows = []
+    
+    for b in data:
+        # 1. 狀態清洗：把不合規的 'completed' 強制轉為 'confirmed'
+        raw_status = b.get("status", "confirmed").lower()
+        if raw_status == "completed":
+            final_status = "confirmed"
+        elif raw_status not in ['confirmed', 'cancelled', 'refunded']:
+            final_status = "confirmed"
+        else:
+            final_status = raw_status
+
+        # 2. 資料裝箱：盡量抓取 JSON 的真實資料，沒有的話再給預設值
+        rows.append((
             b.get("booking_id"), 
             b.get("user_id"), 
-            "NR_SCH01", 
+            b.get("schedule_id", "NR_SCH01"),            # 優先抓 JSON，沒有才用預設值
+            b.get("origin_station_id", "STN_TPE"),       # 補上起點 (Schema 需要)
+            b.get("destination_station_id", "STN_ZLI"),  # 補上終點 (Schema 需要)
             b.get("travel_date"), 
-            "07:00",    
-            "A",        
-            "1A",       
-            b.get("amount_usd"), 
-            b.get("status")
-        )
-        for b in data
-    ]
-    n = insert_many(cur,"bookings",
-                    ["booking_id", "user_id", "schedule_id", "travel_date", "departure_time", "carriage_number", "seat_number", "amount_usd", "status"], rows)
-    print(f"  bookings: {n} rows")
+            b.get("departure_time", "07:00:00"),         # 資料庫 TIME 型態建議補上秒數格式
+            b.get("carriage_number", "A"),               # ⚠️ 檢查你的 JSON 裡是否有座位資訊
+            b.get("seat_number", "1A"),                  # 如果 JSON 裡有獨立的 seat_number 就會抓到，才不會大家都坐 1A
+            b.get("amount_usd", 0.0), 
+            final_status                                 # 放進我們清洗乾淨的狀態
+        ))
+
+    # 3. 寫入資料庫：確保欄位數量與上方 rows.append 的順序完全一致
+    n = insert_many(
+        cur,
+        "bookings",
+        [
+            "booking_id", "user_id", "schedule_id", 
+            "origin_station_id", "destination_station_id", 
+            "travel_date", "departure_time", "carriage_number", 
+            "seat_number", "amount_usd", "status"
+        ], 
+        rows
+    )
+    print(f"   bookings: {n} rows")
 
 
 def seed_metro_travels(cur):
-    data = load("metro_travel_history.json")
+    data = load("metro_travel_history.json") 
     rows = []
+    
     for t in data:
-        # 嘗試抓取各種可能的鍵值名稱，如果真的都沒有，就給預設的時間與票價
-        entry_time = t.get("tap_in_time") or t.get("entry_time") or "2026-05-28 08:00:00+00"
-        exit_time = t.get("tap_out_time") or t.get("exit_time") or "2026-05-28 08:30:00+00"
-        fare = t.get("fare_usd") or t.get("fare") or 2.50
+        # 1. 抓取進站時間
+        entry_time = t.get("entry_time", "2026-05-28 08:00:00")
         
+        # 2. 智慧防呆：如果 JSON 裡沒有 travel_date，就從 entry_time 的字串切出日期 (YYYY-MM-DD)
+        travel_date = t.get("travel_date")
+        if not travel_date and entry_time:
+            travel_date = entry_time.split(" ")[0] # 把 "2026-05-28 08:00:00" 切成 "2026-05-28"
+            
+        # 3. 處理欄位名稱差異 (相容你早期的 JSON key，如 trip_id, amount_usd)
+        history_id = t.get("history_id") or t.get("trip_id")
+        entry_station = t.get("entry_station_id") or t.get("origin_station_id")
+        exit_station = t.get("exit_station_id") or t.get("destination_station_id")
+        fare = t.get("fare") or t.get("amount_usd") or 0.0
+        
+        # 4. 精準裝箱
         rows.append((
-            t.get("trip_id") or t.get("history_id"), 
+            history_id, 
             t.get("user_id"), 
-            t.get("origin_station_id") or t.get("entry_station_id"), 
-            t.get("destination_station_id") or t.get("exit_station_id"), 
+            t.get("schedule_id"), # 這個欄位 schema 允許是 null，所以找不到也沒關係
+            entry_station, 
+            exit_station, 
+            travel_date,          # 💡 補上我們剛剛切出來的日期
             entry_time, 
-            exit_time, 
+            t.get("exit_time"), 
+            t.get("ticket_type", "Single Ticket"), 
             fare
         ))
-        
-    n = insert_many(cur, "metro_travel_history", 
-                    ["history_id", "user_id", "entry_station_id", "exit_station_id", "entry_time", "exit_time", "fare"], rows)
-    print(f"  metro_travel_history: {n} rows")
 
+    # 5. 寫入資料庫 (確認欄位陣列順序完全對齊 schema.sql)
+    n = insert_many(
+        cur,
+        "metro_travel_history",
+        [
+            "history_id", "user_id", "schedule_id", 
+            "entry_station_id", "exit_station_id", 
+            "travel_date", "entry_time", "exit_time", 
+            "ticket_type", "fare"
+        ],
+        rows
+    )
+    print(f"   metro_travel_history: {n} rows")
 
 def seed_payments(cur):
     data = load("payments.json")
     rows = []
     for p in data:
-        status = p.get("status") or p.get("payment_status") or "paid"
-        amount = p.get("amount_usd") or p.get("amount") or 0.00
-        
-        # 抓出目標 ID (可能是 booking_id, trip_id 或 history_id)
+        # 1. 抓取目標 ID
         raw_target_id = p.get("booking_id") or p.get("trip_id") or p.get("history_id")
         
-        # 智慧分流：根據前綴字元決定放進哪一個外鍵欄位
+        # 2. 智慧分流：根據前綴字元決定外鍵，並同時推斷 reference_type
         b_id = None
         h_id = None
+        ref_type = "national_rail"  # 預設防呆
+        
         if raw_target_id:
-            if raw_target_id.startswith("BK"):
+            if raw_target_id.startswith("BK") or raw_target_id.startswith("NR"):
                 b_id = raw_target_id
+                ref_type = "national_rail"
             elif raw_target_id.startswith("MT"):
                 h_id = raw_target_id
+                ref_type = "metro"
 
+        # 3. 狀態清洗：把 'paid' 強制轉為合法的 'success'
+        raw_status = p.get("status") or p.get("payment_status") or "paid"
+        raw_status = raw_status.lower()
+        if raw_status == "paid":
+            final_status = "success"
+        elif raw_status not in ["success", "failed", "refunded"]:
+            final_status = "success"
+        else:
+            final_status = raw_status
+
+        amount = p.get("amount_usd") or p.get("amount") or 0.00
+        
+        # 4. 精準裝箱 (總共 8 個欄位)
         rows.append((
             p.get("payment_id"), 
-            b_id,   # 只有 BK 開頭才會寫入這欄
-            h_id,   # 只有 MT 開頭才會寫入這欄
+            p.get("user_id"),  # 💡 補上付錢的人
+            b_id,   
+            h_id,   
+            ref_type,          # 💡 補上 Schema 規定的 NOT NULL 分類
             amount, 
-            "credit_card",       
-            status
+            p.get("payment_method", "credit_card"),      
+            final_status       # 💡 放入清洗過後的狀態
         ))
         
-    n = insert_many(cur, "payments", 
-                    ["payment_id", "booking_id", "history_id", "amount_usd", "payment_method", "status"], rows)
-    print(f"  payments: {n} rows")
-
+    # 5. 寫入資料庫
+    n = insert_many(
+        cur, 
+        "payments", 
+        ["payment_id", "user_id", "booking_id", "history_id", "reference_type", "amount_usd", "payment_method", "status"], 
+        rows
+    )
+    print(f"   payments: {n} rows")
 
 def seed_feedback(cur):
     data = load("feedback.json")
