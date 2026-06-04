@@ -16,7 +16,7 @@
 ---
 
 ## Section 1 — Entity-Relationship Diagram · /25
-![TransitFlow ER Diagram](https://raw.githubusercontent.com/jokerchou-07/26Databaseclass/main/ERDiagram.png)
+![TransitFlow ER Diagram](https://raw.githubusercontent.com/jokerchou-07/26Databaseclass/main/pic/ERDiagram.png)
 各資料表之主鍵（Primary Key, PK）皆統一採用 VARCHAR(50) 型態，以提供足夠的識別彈性並方便與其他系統整合。
 
 1. Users（使用者基本資料表）
@@ -219,38 +219,53 @@ Required System Recovery Procedure
 ---
 
 ## Section 5 — AI Tool Usage Evidence · /10
+在開發 TransitFlow 資料庫系統時，我大量利用 LLM 來幫忙除錯、寫批次匯入腳本，還有最佳化圖形查詢。為了解決這專案嚴格的環境限制，我在下 Prompt 時會特別強調錯誤日誌、Schema 定義和環境限制，讓 AI 知道狀況。以下是我覺得比較關鍵的三次 AI 協作經驗，分別涵蓋了資料解析除錯、演算法最佳化以及圖形資料庫查詢撰寫，其中也包含我糾正 AI 回答的過程。
 
-**Requirement:** 3 to 5 examples. Each example must include all three fields: **Context**, **Prompt**, **Outcome**.
+Example 1: [Debugging & Data Parsing] 解決 PostgreSQL 匯入腳本的 error
+![TransitFlow ER Diagram](https://raw.githubusercontent.com/jokerchou-07/26Databaseclass/main/pic/metro_schedule_stop是0.png)
 
-| Criterion | What earns full marks |
-|-----------|-----------------------|
-| 3–5 distinct examples covering different aspects (schema design, query writing, debugging, design rationale, etc.) | At least 3 examples; each covers a genuinely different aspect of the project |
-| Each example contains all three required fields: context + prompt + outcome | All three fields present in every example |
-| At least one example discusses a case where the AI output was wrong or needed correction | Describes the specific error, how it was identified, and what correction was made |
-| Overall quality: prompts are specific and purposeful (not generic like "explain databases") | Prompts show that the AI was given meaningful project context |
-| **Section 5 Total** | |
+    --Context: 一開始在寫 seed_postgres.py 要把捷運假資料匯進去時，腳本雖然跑完沒報錯，但我發現終端機顯示 metro_schedule_stops: 0 rows。這種沒有直接拋出 Exception（像是 KeyError）的 error 最難搞，讓我很難抓到 JSON 解析迴圈到底是哪裡出問題。
 
-**Three-fields scoring (3 marks):** All 3 fields present in every example = 3 ·
-**Three-fields scoring:** All 3 fields present in every example = full marks · 1–2 fields missing in some examples = deduction · Missing fields throughout = 0 mark
+    --Prompt: "我正在用 psycopg2.extras.execute_values 寫 PostgreSQL 的 Python seed 腳本。程式跑完沒有報錯，但 metro_schedule_stops 資料表卻寫入 0 rows。我的解析迴圈長這樣：for stop in schedule.get('stops', []): ... 考慮到 JSON 的結構，為什麼它會發生這種『無聲失敗』而不是報錯？另外，假資料的陣列裡只有字串，我該怎麼把它們正確對應到關聯式資料庫需要的 stop_order schema 中？"
 
-**Correction example scoring:** Describes a specific AI error and how it was identified and fixed · Missing = 0
+    --Outcome: AI 一看就點出問題，原來我用了 .get('stops', [])，如果 JSON 裡剛好沒有這個 key，它會直接回傳空陣列，這也是為什麼程式會默默跳過內層迴圈而不報錯。AI 提醒我假資料裡的 key 應該是叫 stops_in_order 才對。另外，針對只有字串的 JSON 陣列，AI 建議我改用 enumerate() 去跑迴圈，這樣就能自動生出關聯式資料庫需要的 stop_order 欄位了，這點真的幫了大忙。
 
-> **Tip:** Every example must have all three fields — **Context** (what you were trying to do), **Prompt** (what you asked), and **Outcome** (what happened, whether it was useful, and what you did next). Examples missing any field lose marks regardless of how many examples are provided. At least one example must describe a case where the AI gave incorrect output and explain how you identified and corrected it.
+Example 2: [Algorithm Optimization] 解決資料庫型別限制與糾正 AI 邏輯
+![TransitFlow ER Diagram](https://raw.githubusercontent.com/jokerchou-07/26Databaseclass/main/pic/時間格式問題_.png)
+
+    --Context: 修正了上面的空迴圈問題後，程式終於能跑寫入，但馬上又撞到 PostgreSQL 的型別限制報錯：invalid input syntax for type time: "Day1 0m"。資料庫嚴格要求 TIME 必須是 HH:MM:SS 格式，但偏偏假資料 JSON 裡只給了 first_train_time (例如 "05:30") 和一個位移分鐘數 travel_time_from_origin_min。
+
+    --Prompt: "PostgreSQL 拒絕了我的寫入，報錯 invalid input syntax for type time: 'Day1 0m'。我的 schema 把 arrival_time 設為 TIME 型別。請問我要如何在 Python 中，利用一個基準字串 first_train_time（例如 '05:30'）加上一個整數 travel_time_from_origin_min，動態計算出符合資料庫規定的 HH:MM:SS 格式字串？"
+
+    --Outcome & Correction: 一開始 AI 給我的解法是用 datetime.datetime.strptime 和 timedelta 模組去轉時間，但我後來意識到這個寫入迴圈有幾千筆資料，這樣一直 parse 物件效能一定很差，所以我主動糾正它，要求它給一個更輕量、不依賴 datetime 模組的數學解法。AI 隨後就把寫法改成純數值的加減（利用字串切割後，以餘數運算 (base_m + travel_time) % 60 算出時和分），執行效率好很多，也順利解決了型別錯誤。
+
+Example 3: [Graph Query Writing] 克服 Neo4j 環境限制與原生語法轉譯
+![TransitFlow ER Diagram](https://raw.githubusercontent.com/jokerchou-07/26Databaseclass/main/pic/NR3路線問題_ai給我錯的_我還問他為何error.png)
+
+    --Context: 在寫 Neo4j 的 query_alternative_routes（避開特定車站的替代路線）時，我原本是呼叫 APOC 函式庫的 apoc.algo.kShortestPaths，結果一跑就噴出 ProcedureNotFound 的錯誤。這才發現因為我們用的是學術專案提供的 Docker 環境，根本沒有預裝 APOC 擴充包。
+
+    --Prompt: "我的 Cypher 查詢在呼叫 apoc.algo.kShortestPaths 時噴出 ProcedureNotFound 的錯誤。因為這是一個學術專案的 Docker 環境，我只有唯讀權限，絕對不能改設定檔或安裝任何外部擴充包。請問我要如何只用『純原生的 Cypher 語法』，寫出能避開特定車站的替代路線搜尋與過濾邏輯？"
+
+    --Outcome & Correction: 一開始 AI 居然還叫我去改 neo4j.conf 檔把 plugin 打開，我立刻糾正它，再次強調這是一個唯讀的受限環境，完全不能改 config 檔。AI 發現此路不通後，才順利轉向，幫我生出了一段純原生的 Cypher 寫法。順帶一提，它是用 MATCH path = ... 搭配 WHERE NOT ANY(...) 把特定車站從路徑節點中過濾掉，最後再用 reduce() 去加總路線時間。這個寫法讓系統完全不用靠外掛就能算出替代路線，成功克服了底層環境的限制。
 
 ---
 
 ## Section 6 — Reflection & Trade-offs · /5
+在開發這個專案的過程中，我在資料庫的正規化、效能與安全性之間做了幾次取捨。以下是我印象比較深刻的兩個設計決策，以及如果這系統要真的上線運作，架構上必須要做的調整。
 
-| Criterion | What earns full marks |
-|-----------|-----------------------|
-| Identifies at least two specific design decisions and explains the reasoning behind each | Two decisions named with clear reasoning — not vague ("we thought it was better"), but specific (e.g., "we chose SERIAL over UUID because our system is single-region and integer joins are faster") |
-| Discusses one aspect that would be different in a production system | Names a concrete production concern (schema migrations, connection pooling, secret management, indexing strategy, etc.) and explains why it would need to change |
-| **Section 6 Total** | |
+1. Design Decisions (具體設計決策與取捨)
+    Decision A: 採用 Composite Key 進行邏輯關聯，而非強制建立 Strict Foreign Key
+    --Reasoning: 在設計 bookings（訂票紀錄）對應到 national_rail_seat_layouts（國鐵座位配置）的關聯時，我曾一度想在 bookings 裡建一個 layout_id 當 Foreign Key。但後來意識到如果這樣硬幹，我在寫入訂單時就必須先 JOIN 查詢出精準的 layout_id，效能會比較慢。所以後來決定退一步，改用 schedule_id、carriage_number 和 seat_number 組成 Composite Key（複合鍵） 來做邏輯關聯。雖然這犧牲了一點資料庫層級的 Referential integrity（參考完整性），但 execute_booking 的運算負擔大幅降低。而且我發現只要善用 SQL 的 WHERE NOT EXISTS，一樣可以完美做到防止重複劃位的防呆機制，所以就維持了這個做法。
 
-**Design decisions scoring (3 marks):** Two specific decisions with clear reasoning = 3 ·
-**Design decisions scoring:** Two specific decisions with clear reasoning = 3 · Vague decisions without reasoning = 1–2 · Missing = 0
+    Decision B: 密碼安全性考量 — 選擇 Bcrypt 取代 MD5 或 SHA-256
+    --Reasoning: 在處理密碼加密時，我一開始其實只是想說用傳統的 SHA-256 雜湊就好，但後來覺得 SHA-256 運算太快，很容易被現代 GPU 硬體暴力破解，根本不夠安全。所以最後決定全面改用 Bcrypt。Bcrypt 好用的地方在於它內建了 Key Stretching（金鑰延展）和可調的 Cost factor，能刻意拖慢運算時間來防禦攻擊。更棒的是，它會自動幫每一組密碼加隨機的 Salt，就算兩個使用者密碼設一模一樣，Hash 出來的結果也完全不同，直接把彩虹表（Rainbow table）攻擊的路給堵死了。
 
-**Production difference scoring:** Identifies a concrete production concern with explanation = 2 · Mentions something production-related without depth = 1 · Missing = 0
+2. Production Difference (上線環境的差異與考量)
+    --Aspect: 導入 Database Connection Pooling（資料庫連線池）
+
+    --Explanation: 目前這個學術專案的寫法是，後端 (queries.py) 每次要查資料，就會呼叫 psycopg2.connect() 去建立一條全新的資料庫連線，用完再關掉。這在單機自己測的時候沒什麼感覺，但如果這系統真的放到 Production 環境（比如連假搶票），幾萬個 request 瞬間湧進來，伺服器光是處理 TCP handshake 就會被拖垮，最後一定會爆發 Connection exhaustion（連線耗盡）然後掛掉。
+
+    --Production Solution: 所以如果真的要上線，我們勢必得在應用程式跟資料庫中間加一層 Connection Pooling（像是用 PgBouncer，或是直接在 SQLAlchemy 裡設定 Pool）。這樣系統啟動時就會先養著一批連線，有 request 來就直接拿去用，用完再還回 Pool 裡，不用一直重新建立連線，執行效率跟高併發下的穩定性都會差非常多。
 
 ---
 
