@@ -610,18 +610,19 @@ JSON:"""
             recent_history, TOOLS, _augmented_message,
             system_prompt=(
                 "You are a tool router. Call the right tool based on the user message. "
+                "IMPORTANT: If the user provides a station ID (e.g. NR03, MS07), ALWAYS prioritize and use that explicit ID, regardless of the station name. "
                 f"Logged-in user: {current_user_email or 'none'}. "
                 "My bookings/tickets/travel history → get_user_bookings (no params). "
                 "Book a ticket / make a booking → check_national_rail_availability first, then make_booking. "
                 "Cancel a booking → cancel_booking. "
                 "Policy/rules/conduct/compensation/luggage/bicycle questions → search_policy. "
+                "Alternative routes / avoid a closed station → find_alternative_routes. "
                 "Route/directions/fastest/quickest/how-to-get/path questions → find_route ONLY (never get_metro_fare). "
                 "Metro fare/price/cost/how-much-does-it-cost questions → get_metro_fare. "
                 "Rail fare/cost/price questions → check_national_rail_availability then get_national_rail_fare. "
                 "Schedule/timetable/trains/services questions → check_national_rail_availability or check_metro_availability. "
                 "National Rail schedules/trains/availability from NRxx to NRyy MUST trigger check_national_rail_availability. "
                 "Metro schedules/trains/availability from MSxx to MSyy MUST trigger check_metro_availability. "
-                
                 "Only call a tool when needed. Output nothing except tool calls."
             ),
         )
@@ -666,7 +667,8 @@ JSON:"""
         any(kw in _lower for kw in _route_triggers) or
         (_two_stations and "route" in _lower)
     )
-    if _is_route and _two_stations and not _tool_selected("find_route", "origin_id", "destination_id"):
+    # Only call find_route when no tool is already selected.
+    if _is_route and _two_stations and not _tool_selected("find_route", "origin_id", "destination_id") and not _tool_selected("find_alternative_routes", "origin_id", "destination_id", "avoid_station_id"):
         _opt = "cost" if any(kw in _lower for kw in ["cheap", "cheapest", "lowest cost"]) else "time"
         _fallback("find_route",
                   {"origin_id": _station_ids[0].upper(), "destination_id": _station_ids[1].upper(), "optimise_by": _opt},
