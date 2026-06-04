@@ -125,10 +125,15 @@ def query_alternative_routes(
     query = """
     MATCH (start {station_id: $origin_id})
     MATCH (end {station_id: $destination_id})
-    CALL apoc.algo.kShortestPaths(start, end, 'METRO_LINK|RAIL_LINK|INTERCHANGE_TO', 'travel_time_min', $search_limit) YIELD path
-    WHERE NOT any(node IN nodes(path) WHERE node.station_id = $avoid_station_id)
-    RETURN [node in nodes(path) | {station_id: node.station_id, name: node.name}] AS route_stations
-    LIMIT $max_routes
+    // 找尋 1 到 15 站以內的所有可能路徑
+    MATCH path = (start)-[:METRO_LINK|NATIONAL_RAIL_LINK|INTERCHANGE_TO*1..15]-(end)
+    // 關鍵過濾器：這條路徑上的所有節點，都不可以包含 avoid_station_id
+    WHERE NOT ANY(node IN nodes(path) WHERE node.station_id = $avoid_station_id)
+    // 計算這條路徑的總時間
+    RETURN path, reduce(time = 0, r IN relationships(path) | time + r.travel_time_min) AS total_time
+    // 照時間排序，只取前 3 條最快的替代路線
+    ORDER BY total_time ASC
+    LIMIT 3
     """
     with _driver() as driver:
         with driver.session() as session:
