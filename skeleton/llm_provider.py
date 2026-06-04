@@ -197,7 +197,7 @@ class LLMProvider:
         r = requests.post(
             f"{OLLAMA_BASE_URL}/api/embeddings",
             json={"model": OLLAMA_EMBED_MODEL, "prompt": text},
-            timeout=60,
+            timeout=180, #increase from 60 to 180 because of the vectors
         )
         r.raise_for_status()
         return r.json()["embedding"]

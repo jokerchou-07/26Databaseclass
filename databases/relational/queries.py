@@ -48,14 +48,18 @@ def query_national_rail_availability(
     origin_id: str,
     destination_id: str,
     travel_date: Optional[str] = None,
+    **kwargs  # Acts as a black hole to absorb unexpected LLM arguments like 'network'
 ) -> list[dict]:
     """
     Returns available schedules. Dynamically calculates booked seats 
-    only if a travel_date is provided.
+    only if a travel_date is provided. Accepts **kwargs to prevent 
+    unexpected parameter errors from the LLM agent.
+    
     Args:
         origin_id: The ID of the departure station.
         destination_id: The ID of the arrival station.
         travel_date: Optional; the date of travel to calculate seat availability.
+        **kwargs: Catch-all for any hallucinated parameters from the AI.
 
     Returns:
         A list of dictionaries containing schedule details and available seats.
@@ -71,7 +75,7 @@ def query_national_rail_availability(
         ORDER BY s.departure_time;
     """
     
-    # Conditionally add the booked seats calculation
+    # Conditionally add the booked seats calculation if a date is provided
     if travel_date:
         booked_subquery = """,
             (SELECT COUNT(*) FROM bookings b 
@@ -84,18 +88,21 @@ def query_national_rail_availability(
         booked_subquery = ""
         params = (origin_id, destination_id)
 
+    # Inject the subquery into the main SQL statement
     sql = sql.format(booked_subquery=booked_subquery)
 
     with _connect() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, params)
             output = []
+            
             for row in cur.fetchall():
                 r = dict(row)
-                # If no travel_date, assume 0 seats are booked for display purposes
+                # If no travel_date is provided, assume 0 seats are booked for display purposes
                 booked = r.get('booked_seats', 0)
                 r['available_seats'] = r['total_seats'] - booked
                 output.append(r)
+                
             return output
 
 
@@ -506,32 +513,48 @@ def register_user(
 
 
 def login_user(email: str, password: str) -> Optional[dict]:
-    # ... (Docstring 保持不變)
+    """
+    Authenticates a user by email and password.
+    Returns a dictionary of user details (excluding the password) if successful,
+    otherwise returns None.
+    """
     with _connect() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-
+            
+            # Fetch the user record from the database by email
             cur.execute("SELECT * FROM users WHERE email = %s", (email,))
             row = cur.fetchone()
             
+            # Return None if the user does not exist
             if not row:
                 return None
                 
             hashed_pwd_from_db = row['password']
             
+            # Ensure the hashed password from the DB is in bytes format for bcrypt
             if isinstance(hashed_pwd_from_db, str):
                 hashed_pwd_from_db = hashed_pwd_from_db.encode('utf-8')
                 
-            #check password
+            # Verify the provided password against the stored hash
             if bcrypt.checkpw(password.encode('utf-8'), hashed_pwd_from_db):
                 user_dict = dict(row)
                 
-                # 移除 password
+                # Remove the password hash from the dictionary for security purposes
                 if 'password' in user_dict:
                     del user_dict['password']
                     
-                # Dummy return value: schema lacks secret_question column
+                # Reconstruct the full name for frontend UI and AI agent compatibility
+                first = user_dict.get('first_name', '')
+                last = user_dict.get('surname', '')
+                full_name_str = f"{first} {last}".strip()
+                
+                # Inject the combined name back into the user dictionary
+                user_dict['full_name'] = full_name_str
+                user_dict['name'] = full_name_str
+                
                 return user_dict
             else:
+                # Return None if the password verification fails
                 return None
 
 

@@ -85,17 +85,21 @@ def seed():
         print("  Created RAIL_LINK relationships")
 
         # 5. 建立跨系統轉乘連線 (INTERCHANGE_TO Relationships)
-        for s in metro_stations:
-            if s.get("is_interchange_national_rail") and s.get("interchange_rail_station_id"):
-                # 轉乘通常是雙向的，所以我們一次建立兩條方向相反的線段
-                session.run(
-                    "MATCH (m:MetroStation {station_id: $metro_id}) "
-                    "MATCH (r:NationalRailStation {station_id: $rail_id}) "
-                    "MERGE (m)-[:INTERCHANGE_TO {walk_time_min: 5}]->(r) "
-                    "MERGE (r)-[:INTERCHANGE_TO {walk_time_min: 5}]->(m)",
-                    metro_id=s["station_id"], rail_id=s["interchange_rail_station_id"]
-                )
-        print("  Created INTERCHANGE_TO relationships")
+        interchanges = [
+            ("MS01", "NR01"),  # Central 轉乘站
+            ("MS07", "NR03"),  # Old Town 轉乘站
+            ("MS15", "NR07")   # Ferndale 轉乘站
+        ]
+        
+        for metro_id, rail_id in interchanges:
+            session.run(
+                "MATCH (m:MetroStation {station_id: $metro_id}) "
+                "MATCH (r:NationalRailStation {station_id: $rail_id}) "
+                "MERGE (m)-[:INTERCHANGE_TO {travel_time_min: 5}]->(r) "
+                "MERGE (r)-[:INTERCHANGE_TO {travel_time_min: 5}]->(m)",
+                metro_id=metro_id, rail_id=rail_id
+            )
+        print("  Created INTERCHANGE_TO relationships (Hardcoded bridges)")
 
     driver.close()
     print("\nNeo4j graph seeded successfully.")

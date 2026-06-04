@@ -91,30 +91,29 @@ def seed_metro_schedules(cur):
     # 2. 【核心修復】解析扁平化的 stops 資料並計算抵達時間
     stop_rows = []
     for schedule in data:
-        schedule_id = schedule.get("schedule_id")
-        stops_in_order = schedule.get("stops_in_order", [])
-        travel_times = schedule.get("travel_time_from_origin_min", {})
-        first_train_str = schedule.get("first_train_time", "05:00")
+        # 1. Match the exact key from the provided JSON
+        stops_list = schedule.get("stops_in_order", [])
         
-        # 解析首班車時間字串 (如 "05:30") 轉換為時間物件
-        try:
-            base_time = datetime.strptime(first_train_str, "%H:%M")
-        except ValueError:
-            base_time = datetime.strptime("05:00", "%H:%M")
+        # 2. Get the base starting time of the train (e.g., "05:30")
+        base_time_str = schedule.get("first_train_time", "06:00")
+        base_h, base_m = map(int, base_time_str.split(":"))
+        
+        for index, station_id in enumerate(stops_list):
+            # 3. Fetch the estimated travel time
+            travel_times = schedule.get("travel_time_from_origin_min", {})
+            travel_time = travel_times.get(station_id, 0)
             
-        for idx, station_id in enumerate(stops_in_order):
-            stop_order = idx + 1  # 停靠順序，從 1 開始計數
-            offset_minutes = travel_times.get(station_id, 0)
-            
-            # 首班車時間 + 行駛分鐘數 = 精準的各站抵達時間
-            arrival_time_obj = base_time + timedelta(minutes=offset_minutes)
-            arrival_time_str = arrival_time_obj.strftime("%H:%M:%S")
-            
+            # 4. Calculate actual valid TIME string (HH:MM:SS) for PostgreSQL
+            total_m = base_m + travel_time
+            arr_h = (base_h + (total_m // 60)) % 24
+            arr_m = total_m % 60
+            arrival_time_str = f"{arr_h:02d}:{arr_m:02d}:00"
+
             stop_rows.append((
-                schedule_id,
-                station_id,
-                arrival_time_str,
-                stop_order
+                schedule.get("schedule_id"),
+                station_id,             
+                arrival_time_str,       # 👈 Insert the valid HH:MM:SS string here!
+                index + 1               
             ))
             
     n2 = insert_many(cur, "metro_schedule_stops", 
