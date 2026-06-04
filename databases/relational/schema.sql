@@ -1,17 +1,40 @@
--- ============================================================
---  TransitFlow PostgreSQL Schema
--- ============================================================
+-- TASK 6 EXTENSION: Live Disruption Management and Adaptive Routing Engine
+-- ==============================================================================
+-- TransitFlow Relational Database Schema (PostgreSQL)
+-- This file defines the DDL structure for users, stations, schedules, seat layouts,
+-- bookings, travel history, payments, feedback, and real-time network disruptions.
+-- ==============================================================================
+
+-- Enable pgvector extension for RAG policy searching
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Drop tables in reverse dependency order to avoid constraint violations during resets
+DROP TABLE IF EXISTS station_disruptions CASCADE;
+DROP TABLE IF EXISTS feedback CASCADE;
+DROP TABLE IF EXISTS payments CASCADE;
+DROP TABLE IF EXISTS metro_travel_history CASCADE;
+DROP TABLE IF EXISTS bookings CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS national_rail_seat_layouts CASCADE;
+DROP TABLE IF EXISTS national_rail_schedules CASCADE;
+DROP TABLE IF EXISTS metro_schedule_stops CASCADE;
+DROP TABLE IF EXISTS metro_schedules CASCADE;
+DROP TABLE IF EXISTS national_rail_stations CASCADE;
+DROP TABLE IF EXISTS metro_stations CASCADE;
+DROP TABLE IF EXISTS policy_documents CASCADE;
 
 -- ============================================================
 -- 1. 核心基礎資料表 (Core Tables)
 -- ============================================================
+
 -- 捷運車站表
 CREATE TABLE IF NOT EXISTS metro_stations (
     -- PK Decision: Chosen VARCHAR(50) over SERIAL/UUID to align perfectly with the external 
     -- transportation JSON data source IDs and maintain exact node identity matching in Neo4j.
     station_id   VARCHAR(50)  PRIMARY KEY,
     name         VARCHAR(100) NOT NULL,
-    zone         INT          NOT NULL
+    zone         INT          NOT NULL,
+    is_interchange BOOLEAN    DEFAULT FALSE
 );
 
 -- 國鐵車站表
@@ -19,7 +42,8 @@ CREATE TABLE IF NOT EXISTS national_rail_stations (
     -- PK Decision: Chosen VARCHAR(50) over SERIAL to ensure seamless cross-referencing with 
     -- standard National Rail station codes and facilitate direct mapping to Graph DB nodes.
     station_id   VARCHAR(50)  PRIMARY KEY,
-    name         VARCHAR(100) NOT NULL
+    name         VARCHAR(100) NOT NULL,
+    is_interchange BOOLEAN    DEFAULT FALSE
 );
 
 -- 註冊使用者表
@@ -31,7 +55,9 @@ CREATE TABLE IF NOT EXISTS users (
     surname         VARCHAR(50)  NOT NULL,
     year_of_birth   INT          NOT NULL,
     email           VARCHAR(150) UNIQUE NOT NULL,
+    -- Security Note: MUST store Argon2id or bcrypt hashed string, NEVER plain-text.
     password        VARCHAR(255) NOT NULL,
+    role            VARCHAR(20)  DEFAULT 'passenger',
     secret_question VARCHAR(255),
     secret_answer   VARCHAR(255),
     created_at      TIMESTAMPTZ  DEFAULT NOW()
@@ -47,7 +73,8 @@ CREATE TABLE IF NOT EXISTS metro_schedules (
     schedule_id   VARCHAR(50)  PRIMARY KEY,
     line          VARCHAR(50)  NOT NULL,   
     frequency_min INT          NOT NULL,  
-    fare          NUMERIC(10,2) NOT NULL   
+    fare          NUMERIC(10,2) NOT NULL,
+    operating_days VARCHAR(50)  NOT NULL DEFAULT 'Daily'
 );
 
 -- 捷運班次停靠站表 (處理時刻表與車站的多對多)
@@ -64,24 +91,28 @@ CREATE TABLE IF NOT EXISTS metro_schedule_stops (
 CREATE TABLE IF NOT EXISTS national_rail_schedules (
     -- PK Decision: Chosen VARCHAR(50) to match external train service codes.
     schedule_id            VARCHAR(50)  PRIMARY KEY,
-    route_name             VARCHAR(100) NOT NULL, -- 例如: NR1
-    service_type           VARCHAR(50)  NOT NULL, -- Express, Normal
-    origin_station_id      VARCHAR(50)  REFERENCES national_rail_stations(station_id),
-    destination_station_id VARCHAR(50)  REFERENCES national_rail_stations(station_id),
+    route_name             VARCHAR(100) NOT NULL,
+    service_type           VARCHAR(50)  NOT NULL,
+    origin_station_id      VARCHAR(50)  REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
+    destination_station_id VARCHAR(50)  REFERENCES national_rail_stations(station_id) ON DELETE RESTRICT,
     departure_time         TIME         NOT NULL,
     arrival_time           TIME         NOT NULL,
+    duration_min           INT          NOT NULL DEFAULT 0,
     fare_standard          NUMERIC(10,2) NOT NULL,
-    fare_first             NUMERIC(10,2) NOT NULL
+    fare_first             NUMERIC(10,2) NOT NULL,
+    operating_days         VARCHAR(50)  NOT NULL DEFAULT 'Daily'
 );
 
--- 國鐵座位配置明細表 (對應 national_rail_seat_layouts.json)
+-- 國鐵座位配置明細表
 CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
     -- PK Decision: Chosen VARCHAR(50) to support composite logical IDs (e.g., LAYOUT_NR_SCH01_A_1A).
     layout_id     VARCHAR(50)  PRIMARY KEY, 
     schedule_id   VARCHAR(50)  REFERENCES national_rail_schedules(schedule_id) ON DELETE CASCADE,
     coach_number  VARCHAR(10)  NOT NULL,    
     seat_number   VARCHAR(10)  NOT NULL,    
-    fare_class    VARCHAR(50)  NOT NULL    
+    fare_class    VARCHAR(50)  NOT NULL CHECK (fare_class IN ('standard', 'first')),
+    is_booked     BOOLEAN      DEFAULT FALSE,
+    UNIQUE (schedule_id, coach_number, seat_number)
 );
 
 -- ============================================================
@@ -94,13 +125,15 @@ CREATE TABLE IF NOT EXISTS bookings (
     -- Delete Strategy Note: Using soft delete ('cancelled' status) to preserve audit trails.
     booking_id       VARCHAR(50)  PRIMARY KEY,
     user_id          VARCHAR(50)  NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    schedule_id      VARCHAR(50)  NOT NULL REFERENCES national_rail_schedules(schedule_id),
+    schedule_id      VARCHAR(50)  NOT NULL REFERENCES national_rail_schedules(schedule_id) ON DELETE RESTRICT,
+    origin_station_id VARCHAR(50) REFERENCES national_rail_stations(station_id),
+    destination_station_id VARCHAR(50) REFERENCES national_rail_stations(station_id),
     travel_date      DATE         NOT NULL,  
     departure_time   TIME         NOT NULL,
     carriage_number  VARCHAR(10)  NOT NULL,  
     seat_number      VARCHAR(10)  NOT NULL,
     amount_usd       NUMERIC(10,2) NOT NULL,
-    status           VARCHAR(50)  NOT NULL,  
+    status           VARCHAR(50)  NOT NULL DEFAULT 'confirmed' CHECK (status IN ('confirmed', 'cancelled', 'refunded')),  
     created_at       TIMESTAMPTZ  DEFAULT NOW()
 );
 
@@ -109,10 +142,13 @@ CREATE TABLE IF NOT EXISTS metro_travel_history (
     -- PK Decision: Chosen VARCHAR(50) for consistency across all transaction records.
     history_id        VARCHAR(50)  PRIMARY KEY,
     user_id           VARCHAR(50)  NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-    entry_station_id  VARCHAR(50)  NOT NULL REFERENCES metro_stations(station_id),
-    exit_station_id   VARCHAR(50)  REFERENCES metro_stations(station_id),
+    schedule_id       VARCHAR(50)  REFERENCES metro_schedules(schedule_id),
+    entry_station_id  VARCHAR(50)  NOT NULL REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
+    exit_station_id   VARCHAR(50)  REFERENCES metro_stations(station_id) ON DELETE RESTRICT,
+    travel_date       DATE         NOT NULL,
     entry_time        TIMESTAMPTZ  NOT NULL,
     exit_time         TIMESTAMPTZ,
+    ticket_type       VARCHAR(50)  NOT NULL DEFAULT 'Single Ticket',
     fare              NUMERIC(10,2) DEFAULT 0.00
 );
 
@@ -120,12 +156,14 @@ CREATE TABLE IF NOT EXISTS metro_travel_history (
 CREATE TABLE IF NOT EXISTS payments (
     -- PK Decision: Chosen VARCHAR(50) for integration with external payment gateway IDs.
     payment_id     VARCHAR(50)  PRIMARY KEY,
+    user_id        VARCHAR(50)  REFERENCES users(user_id) ON DELETE CASCADE,
     booking_id     VARCHAR(50)  REFERENCES bookings(booking_id) ON DELETE SET NULL,
     history_id     VARCHAR(50)  REFERENCES metro_travel_history(history_id) ON DELETE SET NULL,
+    reference_type VARCHAR(20)  NOT NULL CHECK (reference_type IN ('national_rail', 'metro')),
     amount_usd     NUMERIC(10,2) NOT NULL,
     payment_method VARCHAR(50)  NOT NULL, 
-    status         VARCHAR(50)  NOT NULL, 
-    payment_date   TIMESTAMPTZ  DEFAULT NOW()
+    status         VARCHAR(50)  NOT NULL DEFAULT 'success' CHECK (status IN ('success', 'failed', 'refunded')), 
+    payment_date   TIMESTAMPTZ  DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 意見回饋表
@@ -133,28 +171,50 @@ CREATE TABLE IF NOT EXISTS feedback (
     -- PK Decision: Chosen VARCHAR(50) for uniform ID structures across the database.
     feedback_id  VARCHAR(50)  PRIMARY KEY,
     user_id      VARCHAR(50)  NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    booking_id   VARCHAR(50)  REFERENCES bookings(booking_id) ON DELETE SET NULL,
     rating       INT          NOT NULL CHECK (rating >= 1 AND rating <= 5),
     comments     TEXT,
     submitted_at TIMESTAMPTZ  DEFAULT NOW()
 );
 
-
 -- ============================================================
---  VECTOR SCHEMA  (RAG / Help Desk) — do not modify
+-- 4. VECTOR SCHEMA (RAG / Help Desk)
 -- ============================================================
-
-CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE IF NOT EXISTS policy_documents (
     id          SERIAL       PRIMARY KEY,
     title       VARCHAR(200) NOT NULL,
-    category    VARCHAR(50)  NOT NULL, 
+    category    VARCHAR(50)  NOT NULL,  
     content     TEXT         NOT NULL,
     embedding   vector(768),
     source_file VARCHAR(200),
     created_at  TIMESTAMPTZ  DEFAULT NOW()
 );
 
+-- ============================================================
+-- 5. TASK 6 EXTENSION: DYNAMIC DISRUPTION TABLES & INDEXES
+-- ============================================================
+
+CREATE TABLE station_disruptions (
+    disruption_id SERIAL PRIMARY KEY,
+    station_id VARCHAR(50) NOT NULL, 
+    network_type VARCHAR(20) NOT NULL CHECK (network_type IN ('metro', 'national_rail')),
+    severity VARCHAR(20) DEFAULT 'DELAY' CHECK (severity IN ('DELAY', 'CLOSED')),
+    description TEXT NOT NULL,
+    reported_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Index for RAG cosine distance query speedups
 CREATE INDEX IF NOT EXISTS idx_policy_documents_embedding 
-ON policy_documents 
-USING hnsw (embedding vector_cosine_ops);
+ON policy_documents USING hnsw (embedding vector_cosine_ops);
+
+-- Foreign Key Optimization Indexes for transactional joins
+CREATE INDEX IF NOT EXISTS idx_bookings_user ON bookings(user_id);
+CREATE INDEX IF NOT EXISTS idx_bookings_schedule ON bookings(schedule_id);
+CREATE INDEX IF NOT EXISTS idx_payments_lookup ON payments(reference_type, booking_id, history_id);
+
+-- TASK 6 EXTENSION INDEX: Instant lookup for active network bottlenecks during route-finding
+CREATE INDEX IF NOT EXISTS idx_disruptions_active_station 
+ON station_disruptions(station_id) 
+WHERE resolved_at IS NULL;
