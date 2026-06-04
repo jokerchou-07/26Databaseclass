@@ -28,15 +28,3 @@ CREATE TABLE station_disruptions (
     reported_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     resolved_at TIMESTAMP WITH TIME ZONE
 );
-
-Production-Quality Indexing Strategy: idx_disruptions_active_station
-To prevent system performance degradation as incident logs grow over time, we implemented a highly optimized Partial Index:
-CREATE INDEX idx_disruptions_active_station 
-ON station_disruptions(station_id) 
-WHERE resolved_at IS NULL;
-
-Performance Justification: In a production environment, historical incident records can reach millions of rows, but active disruptions at any given moment are usually less than 1%.
-
-By adding the WHERE resolved_at IS NULL predicate, this index completely ignores resolved historical data and only maps live incidents.
-
-This allows the routing engine to fetch the current system bottlenecks with O(1) look-up efficiency, drastically reducing memory consumption and preventing B-Tree page bloat in PostgreSQL.
