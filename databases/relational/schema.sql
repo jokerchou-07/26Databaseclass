@@ -7,6 +7,8 @@
 -- ============================================================
 -- 捷運車站表
 CREATE TABLE IF NOT EXISTS metro_stations (
+    -- PK Decision: Chosen VARCHAR(50) over SERIAL/UUID to align perfectly with the external 
+    -- transportation JSON data source IDs and maintain exact node identity matching in Neo4j.
     station_id   VARCHAR(50)  PRIMARY KEY,
     name         VARCHAR(100) NOT NULL,
     zone         INT          NOT NULL
@@ -14,20 +16,25 @@ CREATE TABLE IF NOT EXISTS metro_stations (
 
 -- 國鐵車站表
 CREATE TABLE IF NOT EXISTS national_rail_stations (
+    -- PK Decision: Chosen VARCHAR(50) over SERIAL to ensure seamless cross-referencing with 
+    -- standard National Rail station codes and facilitate direct mapping to Graph DB nodes.
     station_id   VARCHAR(50)  PRIMARY KEY,
     name         VARCHAR(100) NOT NULL
 );
 
 -- 註冊使用者表
 CREATE TABLE IF NOT EXISTS users (
-
-    user_id      VARCHAR(50)  PRIMARY KEY,
-    first_name   VARCHAR(50)  NOT NULL,   -- seperate name
-    surname      VARCHAR(50)  NOT NULL,   
-    email        VARCHAR(150) UNIQUE NOT NULL,
-    password     VARCHAR(255) NOT NULL,
-    created_at   TIMESTAMPTZ  DEFAULT NOW()
-
+    -- PK Decision: Chosen VARCHAR(50) over SERIAL to support secure, system-generated hash 
+    -- identifiers or custom UUID strings from the application layer.
+    user_id         VARCHAR(50)  PRIMARY KEY,
+    first_name      VARCHAR(50)  NOT NULL,
+    surname         VARCHAR(50)  NOT NULL,
+    year_of_birth   INT          NOT NULL,
+    email           VARCHAR(150) UNIQUE NOT NULL,
+    password        VARCHAR(255) NOT NULL,
+    secret_question VARCHAR(255),
+    secret_answer   VARCHAR(255),
+    created_at      TIMESTAMPTZ  DEFAULT NOW()
 );
 
 -- ============================================================
@@ -36,14 +43,16 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- 捷運班次表
 CREATE TABLE IF NOT EXISTS metro_schedules (
+    -- PK Decision: Chosen VARCHAR(50) to use deterministic service strings (e.g., 'SCH_M1').
     schedule_id   VARCHAR(50)  PRIMARY KEY,
-    line          VARCHAR(50)  NOT NULL,   -- 例如: M1, M2
-    frequency_min INT          NOT NULL,   -- 班距
-    fare          NUMERIC(10,2) NOT NULL   -- 基本票價
+    line          VARCHAR(50)  NOT NULL,   
+    frequency_min INT          NOT NULL,  
+    fare          NUMERIC(10,2) NOT NULL   
 );
 
 -- 捷運班次停靠站表 (處理時刻表與車站的多對多)
 CREATE TABLE IF NOT EXISTS metro_schedule_stops (
+    -- Normalisation Note: Junction table created to satisfy 3NF, avoiding array columns.
     schedule_id   VARCHAR(50)  REFERENCES metro_schedules(schedule_id) ON DELETE CASCADE,
     station_id    VARCHAR(50)  REFERENCES metro_stations(station_id) ON DELETE CASCADE,
     arrival_time  TIME         NOT NULL,
@@ -53,6 +62,7 @@ CREATE TABLE IF NOT EXISTS metro_schedule_stops (
 
 -- 國鐵班次表
 CREATE TABLE IF NOT EXISTS national_rail_schedules (
+    -- PK Decision: Chosen VARCHAR(50) to match external train service codes.
     schedule_id            VARCHAR(50)  PRIMARY KEY,
     route_name             VARCHAR(100) NOT NULL, -- 例如: NR1
     service_type           VARCHAR(50)  NOT NULL, -- Express, Normal
@@ -66,11 +76,12 @@ CREATE TABLE IF NOT EXISTS national_rail_schedules (
 
 -- 國鐵座位配置明細表 (對應 national_rail_seat_layouts.json)
 CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
-    layout_id     VARCHAR(50)  PRIMARY KEY, -- 格式通常為 LAYOUT_NR_SCH01_A_1A 之類
+    -- PK Decision: Chosen VARCHAR(50) to support composite logical IDs (e.g., LAYOUT_NR_SCH01_A_1A).
+    layout_id     VARCHAR(50)  PRIMARY KEY, 
     schedule_id   VARCHAR(50)  REFERENCES national_rail_schedules(schedule_id) ON DELETE CASCADE,
-    coach_number  VARCHAR(10)  NOT NULL,    -- Car A, Car B
-    seat_number   VARCHAR(10)  NOT NULL,    -- 1A, 1B
-    fare_class    VARCHAR(50)  NOT NULL     -- standard, first
+    coach_number  VARCHAR(10)  NOT NULL,    
+    seat_number   VARCHAR(10)  NOT NULL,    
+    fare_class    VARCHAR(50)  NOT NULL    
 );
 
 -- ============================================================
@@ -79,6 +90,8 @@ CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
 
 -- 國鐵訂位紀錄表
 CREATE TABLE IF NOT EXISTS bookings (
+    -- PK Decision: Chosen VARCHAR(50) to allow application-side generation of tracking IDs.
+    -- Delete Strategy Note: Using soft delete ('cancelled' status) to preserve audit trails.
     booking_id       VARCHAR(50)  PRIMARY KEY,
     user_id          VARCHAR(50)  NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     schedule_id      VARCHAR(50)  NOT NULL REFERENCES national_rail_schedules(schedule_id),
@@ -93,6 +106,7 @@ CREATE TABLE IF NOT EXISTS bookings (
 
 -- 捷運搭乘歷史紀錄表
 CREATE TABLE IF NOT EXISTS metro_travel_history (
+    -- PK Decision: Chosen VARCHAR(50) for consistency across all transaction records.
     history_id        VARCHAR(50)  PRIMARY KEY,
     user_id           VARCHAR(50)  NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     entry_station_id  VARCHAR(50)  NOT NULL REFERENCES metro_stations(station_id),
@@ -104,17 +118,19 @@ CREATE TABLE IF NOT EXISTS metro_travel_history (
 
 -- 付款紀錄表
 CREATE TABLE IF NOT EXISTS payments (
+    -- PK Decision: Chosen VARCHAR(50) for integration with external payment gateway IDs.
     payment_id     VARCHAR(50)  PRIMARY KEY,
     booking_id     VARCHAR(50)  REFERENCES bookings(booking_id) ON DELETE SET NULL,
     history_id     VARCHAR(50)  REFERENCES metro_travel_history(history_id) ON DELETE SET NULL,
     amount_usd     NUMERIC(10,2) NOT NULL,
-    payment_method VARCHAR(50)  NOT NULL, -- credit_card, easycard
-    status         VARCHAR(50)  NOT NULL, -- paid, refunded, failed
+    payment_method VARCHAR(50)  NOT NULL, 
+    status         VARCHAR(50)  NOT NULL, 
     payment_date   TIMESTAMPTZ  DEFAULT NOW()
 );
 
 -- 意見回饋表
 CREATE TABLE IF NOT EXISTS feedback (
+    -- PK Decision: Chosen VARCHAR(50) for uniform ID structures across the database.
     feedback_id  VARCHAR(50)  PRIMARY KEY,
     user_id      VARCHAR(50)  NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     rating       INT          NOT NULL CHECK (rating >= 1 AND rating <= 5),
@@ -132,14 +148,13 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS policy_documents (
     id          SERIAL       PRIMARY KEY,
     title       VARCHAR(200) NOT NULL,
-    category    VARCHAR(50)  NOT NULL,  -- 'refund', 'booking', 'conduct'
+    category    VARCHAR(50)  NOT NULL, 
     content     TEXT         NOT NULL,
     embedding   vector(768),
     source_file VARCHAR(200),
     created_at  TIMESTAMPTZ  DEFAULT NOW()
 );
 
--- Fix: 幫 INDEX 加上明確名稱 idx_policy_documents_embedding，修正語法錯誤
 CREATE INDEX IF NOT EXISTS idx_policy_documents_embedding 
 ON policy_documents 
 USING hnsw (embedding vector_cosine_ops);
