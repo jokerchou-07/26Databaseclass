@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS metro_travel_history CASCADE;
 DROP TABLE IF EXISTS bookings CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 DROP TABLE IF EXISTS national_rail_seat_layouts CASCADE;
+DROP TABLE IF EXISTS national_rail_schedule_stops CASCADE;
 DROP TABLE IF EXISTS national_rail_schedules CASCADE;
 DROP TABLE IF EXISTS metro_schedule_stops CASCADE;
 DROP TABLE IF EXISTS metro_schedules CASCADE;
@@ -101,6 +102,15 @@ CREATE TABLE IF NOT EXISTS national_rail_schedules (
     fare_standard          NUMERIC(10,2) NOT NULL,
     fare_first             NUMERIC(10,2) NOT NULL,
     operating_days         VARCHAR(50)  NOT NULL DEFAULT 'Daily'
+);
+
+-- 國鐵班次停靠站表
+CREATE TABLE IF NOT EXISTS national_rail_schedule_stops (
+    schedule_id  VARCHAR(50) REFERENCES national_rail_schedules(schedule_id) ON DELETE CASCADE,
+    station_id   VARCHAR(50) REFERENCES national_rail_stations(station_id) ON DELETE CASCADE,
+    stop_order   INT NOT NULL,
+    arrival_time TIME NOT NULL,
+    PRIMARY KEY (schedule_id, station_id)
 );
 
 -- 國鐵座位配置明細表

@@ -123,24 +123,47 @@ def seed_metro_schedules(cur):
 
 def seed_national_rail_schedules(cur):
     data = load("national_rail_schedules.json")
-    rows = [
-        (
-            s.get("schedule_id"), 
-            "NR1", 
-            "Normal", 
-            s.get("origin_station_id"), 
-            s.get("destination_station_id"), 
-            s.get("departure_time", "08:00"), # 加上 departure_time 預設值
-            s.get("arrival_time", "10:00"),   # 加上 arrival_time 預設值
-            10.00, 
-            20.00  
-        )
-        for s in data
-    ]
-    n = insert_many(cur, "national_rail_schedules", 
-                    ["schedule_id", "route_name", "service_type", "origin_station_id", "destination_station_id", "departure_time", "arrival_time", "fare_standard", "fare_first"], rows)
+    rows = []
+    for s in data:
+        fare_std = s.get("fare_classes", {}).get("standard", {}).get("base_fare_usd", 10.00)
+        fare_first = s.get("fare_classes", {}).get("first", {}).get("base_fare_usd", 20.00)
+        rows.append((
+            s.get("schedule_id"),
+            s.get("line", "NR1"),
+            s.get("service_type", "normal"),
+            s.get("origin_station_id"),
+            s.get("destination_station_id"),
+            s.get("first_train_time", "08:00"),
+            s.get("last_train_time", "22:00"),
+            fare_std,
+            fare_first
+        ))
+    n = insert_many(cur, "national_rail_schedules",
+                    ["schedule_id", "route_name", "service_type", 
+                     "origin_station_id", "destination_station_id",
+                     "departure_time", "arrival_time",
+                     "fare_standard", "fare_first"], rows)
     print(f"  national_rail_schedules: {n} rows")
 
+def seed_national_rail_stops(cur):
+    data = load("national_rail_schedules.json")
+    rows = []
+    for s in data:
+        stops = s.get("stops_in_order", [])
+        times = s.get("travel_time_from_origin_min", {})
+        base_h, base_m = map(int, s.get("first_train_time", "06:00").split(":"))
+        
+        for idx, station_id in enumerate(stops):
+            travel_min = times.get(station_id, 0)
+            total_m = base_m + travel_min
+            arr_h = (base_h + total_m // 60) % 24
+            arr_m = total_m % 60
+            arrival = f"{arr_h:02d}:{arr_m:02d}:00"
+            rows.append((s["schedule_id"], station_id, idx + 1, arrival))
+    
+    n = insert_many(cur, "national_rail_schedule_stops",
+                    ["schedule_id", "station_id", "stop_order", "arrival_time"], rows)
+    print(f"  national_rail_schedule_stops: {n} rows")
 
 def seed_seat_layouts(cur):
     # 💡 關鍵第一步：動態讀取火車總班次表，抓出「所有實際存在的班次 ID」
@@ -418,6 +441,7 @@ def main():
         seed_national_rail_stations(cur)
         seed_metro_schedules(cur)
         seed_national_rail_schedules(cur)
+        seed_national_rail_stops(cur)
         seed_seat_layouts(cur)
         seed_users(cur)
         seed_national_rail_bookings(cur)

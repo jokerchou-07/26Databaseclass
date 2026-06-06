@@ -43,39 +43,30 @@ def example_query() -> dict:
             return dict(cur.fetchone())
 
 # ── NATIONAL RAIL AVAILABILITY ────────────────────────────────────────────────
-
 def query_national_rail_availability(
     origin_id: str,
     destination_id: str,
     travel_date: Optional[str] = None,
     **kwargs  # Acts as a black hole to absorb unexpected LLM arguments like 'network'
 ) -> list[dict]:
-    """
-    Returns available schedules. Dynamically calculates booked seats 
-    only if a travel_date is provided. Accepts **kwargs to prevent 
-    unexpected parameter errors from the LLM agent.
-    
-    Args:
-        origin_id: The ID of the departure station.
-        destination_id: The ID of the arrival station.
-        travel_date: Optional; the date of travel to calculate seat availability.
-        **kwargs: Catch-all for any hallucinated parameters from the AI.
-
-    Returns:
-        A list of dictionaries containing schedule details and available seats.
-    """
-    # Base query: fetches schedule details and total capacity
     sql = """
         SELECT 
-            s.schedule_id, s.route_name, s.service_type, s.departure_time, s.arrival_time,
-            (SELECT COUNT(*) FROM national_rail_seat_layouts l WHERE l.schedule_id = s.schedule_id) AS total_seats
+            s.schedule_id, s.route_name, s.service_type,
+            s.departure_time, s.arrival_time,
+            o.arrival_time AS origin_time,
+            d.arrival_time AS dest_time,
+            (d.stop_order - o.stop_order) AS stops_travelled,
+            (SELECT COUNT(*) FROM national_rail_seat_layouts l 
+             WHERE l.schedule_id = s.schedule_id) AS total_seats
             {booked_subquery}
         FROM national_rail_schedules s
-        WHERE s.origin_station_id = %s AND s.destination_station_id = %s
-        ORDER BY s.departure_time;
+        JOIN national_rail_schedule_stops o 
+            ON s.schedule_id = o.schedule_id AND o.station_id = %s
+        JOIN national_rail_schedule_stops d 
+            ON s.schedule_id = d.schedule_id AND d.station_id = %s
+        WHERE o.stop_order < d.stop_order
+        ORDER BY o.arrival_time
     """
-    
-    # Conditionally add the booked seats calculation if a date is provided
     if travel_date:
         booked_subquery = """,
             (SELECT COUNT(*) FROM bookings b 
@@ -83,26 +74,22 @@ def query_national_rail_availability(
                AND b.travel_date = %s 
                AND b.status = 'confirmed') AS booked_seats
         """
-        params = (travel_date, origin_id, destination_id)
+        params = (origin_id, destination_id, travel_date)
     else:
         booked_subquery = ""
         params = (origin_id, destination_id)
 
-    # Inject the subquery into the main SQL statement
     sql = sql.format(booked_subquery=booked_subquery)
 
     with _connect() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, params)
             output = []
-            
             for row in cur.fetchall():
                 r = dict(row)
-                # If no travel_date is provided, assume 0 seats are booked for display purposes
                 booked = r.get('booked_seats', 0)
                 r['available_seats'] = r['total_seats'] - booked
                 output.append(r)
-                
             return output
 
 
@@ -111,33 +98,27 @@ def query_national_rail_fare(
     fare_class: str,
     stops_travelled: int,
 ) -> Optional[dict]:
-    """
-    Retrieves standard or first-class fare directly from the schedule table.
-
-    Args:
-        schedule_id: The ID of the train schedule (e.g., 'NR_SCH01').
-        fare_class: The class of the fare, either 'standard' or 'first'.
-        stops_travelled: Number of stops (not used for base national rail fare but kept for signature matching).
-
-    Returns:
-        A dictionary containing fare details, or None if the schedule is not found.
-    """
     sql = "SELECT fare_standard, fare_first FROM national_rail_schedules WHERE schedule_id = %s"
     with _connect() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(sql, (schedule_id,))
             row = cur.fetchone()
-            if not row: 
+            if not row:
                 return None
-                
-            base_fare = float(row['fare_first']) if fare_class == 'first' else float(row['fare_standard'])
+
+            if fare_class == 'first':
+                base_fare = float(row['fare_first'])
+                per_stop_rate = 2.50
+            else:
+                base_fare = float(row['fare_standard'])
+                per_stop_rate = 1.50
+
             return {
                 "fare_class": fare_class,
                 "base_fare_usd": base_fare,
-                "per_stop_rate_usd": 0.0,
-                "total_fare_usd": base_fare
+                "per_stop_rate_usd": per_stop_rate,
+                "total_fare_usd": base_fare + (per_stop_rate * stops_travelled)
             }
-
 
 # ── METRO SCHEDULES & FARE ────────────────────────────────────────────────────
 
@@ -408,19 +389,18 @@ def execute_booking(
                     VALUES (%s, %s, %s, %s, CURRENT_TIME, %s, %s, %s, 'confirmed')
                 """, (b_id, user_id, schedule_id, travel_date, coach, seat_id, amount))
                 
-                # 2. Insert Payment
+                # 2. Insert Payment (💡 TASK 6 / SCHEMA FIX: Added required 'reference_type' to satisfy not-null constraint)
                 cur.execute("""
-                    INSERT INTO payments (payment_id, booking_id, amount_usd, payment_method, status) 
-                    VALUES (%s, %s, %s, 'credit_card', 'paid')
+                    INSERT INTO payments (payment_id, reference_type, booking_id, amount_usd, payment_method, status) 
+                    VALUES (%s, 'national_rail', %s, %s, 'credit_card', 'success')
                 """, (p_id, b_id, amount))
                 
             conn.commit()
-            return True, {"booking_id": b_id, "seat": seat_id, "amount": amount}
+            return True, {"booking_id": b_id, "user_id": user_id,"schedule_id": schedule_id, "seat_id": seat_id, "amount": amount}
             
         except Exception as e:
             conn.rollback() # Ensure DB integrity on failure
             return False, str(e)
-
 
 def execute_cancellation(booking_id: str, user_id: str) -> tuple[bool, dict | str]:
     """
@@ -472,7 +452,7 @@ def execute_cancellation(booking_id: str, user_id: str) -> tuple[bool, dict | st
                 
             conn.commit()
             return True, {
-                "refund_amount_usd": refund_amount, 
+                "refund_amount": refund_amount, 
                 "policy": f"Refund calculated at {refund_rate*100}% based on {service_type} policy."
             }
         except Exception as e:
