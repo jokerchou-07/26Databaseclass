@@ -82,6 +82,6 @@ We confirm that this work allocation accurately reflects how responsibilities we
 
 | Name | Signature / Typed name | Date |
 |------|----------------------|------|
-| | | |
-| | | |
-| | | |
+| 林誼婷 | 林誼婷 | 2026/06/04 |
+| 梁易軒 | 梁易軒 | 2026/06/04 |
+| 周怡辰 | 周怡辰 | 2026/06/04 |
