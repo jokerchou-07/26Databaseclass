@@ -549,7 +549,8 @@ def run_agent(
     if current_user_email:
         profile = query_user_profile(current_user_email)
         if profile:
-            user_display = f"{profile.get('name', 'User')} (email: {current_user_email}, user_id: {profile['user_id']})"        
+            display_name = profile.get('name') or profile.get('full_name') or 'User'
+            user_display = f"{display_name} (email: {current_user_email}, user_id: {profile['user_id']})"      
         else:
             user_display = current_user_email
         contextual_prompt = SYSTEM_PROMPT + (

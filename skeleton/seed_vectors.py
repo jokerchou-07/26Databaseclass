@@ -81,6 +81,15 @@ def build_documents():
                 "content": _text({section: tp[section]}),
             })
 
+    # delay_compensation.json — one document per compensation tier
+    for comp in _load("delay_compensation.json"):
+        docs.append({
+            "title": comp["label"],
+            "category": "compensation",
+            "source_file": "delay_compensation.json",
+            "content": _text(comp),
+        })
+
     return docs
 
 

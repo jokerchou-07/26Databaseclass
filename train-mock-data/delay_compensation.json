@@ -1,0 +1,31 @@
+[
+  {
+    "label": "Delay Compensation — 15 to 29 Minutes",
+    "delay_minutes": "15-29",
+    "entitlement": "25% refund of the single fare",
+    "claim_deadline_days": 28,
+    "claim_method": ["TransitFlow app", "customer service counter", "online form"]
+  },
+  {
+    "label": "Delay Compensation — 30 to 59 Minutes",
+    "delay_minutes": "30-59",
+    "entitlement": "50% refund of the single fare",
+    "claim_deadline_days": 28,
+    "claim_method": ["TransitFlow app", "customer service counter", "online form"]
+  },
+  {
+    "label": "Delay Compensation — 60 Minutes or More",
+    "delay_minutes": "60+",
+    "entitlement": "100% refund of the single fare",
+    "claim_deadline_days": 28,
+    "claim_method": ["TransitFlow app", "customer service counter", "online form"]
+  },
+  {
+    "label": "Delay Compensation — Exclusions",
+    "exclusions": [
+      "Delays caused by severe weather or force majeure",
+      "Delays caused by security incidents outside TransitFlow control",
+      "Delays where the passenger was at fault"
+    ]
+  }
+]

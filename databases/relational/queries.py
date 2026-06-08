@@ -269,12 +269,13 @@ def query_user_profile(user_email: str) -> Optional[dict]:
                 
             user_dict = dict(row)
             
-            # 為了安撫 agent.py，我們把它要的 full_name 拼回來給它
+            # To appease agent.py, we'll construct the full_name it needs and give it back.
             first = user_dict.get('first_name', '')
             last = user_dict.get('surname', '')
             user_dict['full_name'] = f"{first} {last}".strip()
+            user_dict['name'] = user_dict['full_name']
             
-            # 順手把密碼從記憶體裡銷毀，不讓它流到 AI 代理身上
+            # Sanitize the data structure to prevent leakage of sensitive credentials to the LLM agent layers.
             if 'password' in user_dict:
                 del user_dict['password']
                 
@@ -471,7 +472,7 @@ def register_user(
     secret_question: str,
     secret_answer: str,
 ) -> tuple[bool, str]:
-    # ... (Docstring 保持不變)
+    # ... (Preserve the legacy docstring configuration)
     u_id = "U-" + "".join(random.choices(string.digits, k=4))
 
     full_name = f"{first_name} {surname}"
@@ -479,7 +480,7 @@ def register_user(
     try:
         with _connect() as conn:
             with conn.cursor() as cur:
-                # 這裡對應新的 schema，直接存入 first_name 和 surname
+                # Align with updated schema definitions by directly infusing split naming attributes
                 cur.execute(
                     "INSERT INTO users (user_id, first_name, surname, email, password) VALUES (%s, %s, %s, %s, %s)", 
                     (u_id, first_name, surname, email, hashed_password)
@@ -539,7 +540,7 @@ def login_user(email: str, password: str) -> Optional[dict]:
 
 
 def get_user_secret_question(email: str) -> Optional[str]:
-    # 修正：直接去資料庫查詢使用者的安全提問
+    # Directly query the database to retrieve the user's registered security question.
     with _connect() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT secret_question FROM users WHERE email = %s", (email,))
@@ -548,7 +549,7 @@ def get_user_secret_question(email: str) -> Optional[str]:
 
 
 def verify_secret_answer(email: str, answer: str) -> bool:
-    # 修正：去資料庫比對安全提示答案（轉小寫並去空白，增加容錯率）
+    # Verify the security answer against the database record with sanitization (lowercasing and whitespace stripping) for enhanced fault tolerance.
     with _connect() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT secret_answer FROM users WHERE email = %s", (email,))
@@ -559,19 +560,12 @@ def verify_secret_answer(email: str, answer: str) -> bool:
 
 
 def update_password(email: str, new_password: str) -> bool:
-    """
-    Updates a user's password with a new salt and hash.
-    """
-    # 🟢 產出新的專屬鹽巴並加密新密碼
-    salt = os.urandom(16).hex()
-    password_hash = hashlib.sha256((new_password + salt).encode('utf-8')).hexdigest()
-    
+    hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
     with _connect() as conn:
         with conn.cursor() as cur:
-            # 🟢 更新密碼雜湊值與新鹽巴
             cur.execute(
-                "UPDATE users SET password_hash = %s, salt = %s WHERE email = %s", 
-                (password_hash, salt, email)
+                "UPDATE users SET password = %s WHERE email = %s",
+                (hashed, email)
             )
             return cur.rowcount > 0
         
