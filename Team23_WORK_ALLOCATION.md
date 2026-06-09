@@ -45,7 +45,7 @@ or reassigned mid-project).
 | Section 2 — Normalisation Justification | 周怡辰 | | |
 | Section 3 — Graph Database Design Rationale | 周怡辰 | | |
 | Section 4 — Vector / RAG Design | 周怡辰 | | |
-| Section 5 — AI Tool Usage Evidence | 林誼婷| 梁易軒| 林誼婷撰寫example1-3、example4-5|
+| Section 5 — AI Tool Usage Evidence | 林誼婷| 梁易軒| 林誼婷撰寫example1-3、梁易軒撰寫example4-5|
 | Section 6 — Reflection & Trade-offs | 林誼婷| | |
 | Section 7 — Optional Extension *(if applicable)* | 梁易軒| | |
 
@@ -60,7 +60,7 @@ All members must sum to 100%.
 |--------|-----------|---------------------|
 | 周怡辰 | 45% | 負責Seeding腳本撰寫、Neo4j演算法、協助修改queries、撰寫圖形資料庫、設計文件的理論論述（Sec 1-4）|
 | 林誼婷 | 40% | 主要負責PostgreSQL核心查詢模組、撰寫圖形資料庫、協助修改Seeding腳本撰寫、設計文件的理論論述（Sec 5-6）|
-| 梁易軒 | 15% | Task 6 加分功能實作、撰寫圖形資料庫、設計文件的理論論述（Sec 5、7）|
+| 梁易軒 | 15% | Task 6 加分功能實作、撰寫圖形資料庫、設計文件的理論論述（Sec 5-7）|
 | **Total** | **100%** | |
 
 ---
