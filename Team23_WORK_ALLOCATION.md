@@ -72,7 +72,7 @@ If nothing changed, write "No changes."
 
 | Change | Original plan | Revised plan | Reason |
 |--------|--------------|-------------|--------|
-| 梁易軒| graph/queries.py | task 6 | too late to finish |
+| 梁易軒| graph/queries.py | task 6 | Reassessed the timeline and complexity of Task 5. Engineering resources were strategically shifted to spearhead the independent Task 6 Extension to optimize team throughput and secure maximum grading incentives |
 
 ---
 
