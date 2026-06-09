@@ -247,6 +247,64 @@ Example 3: [Graph Query Writing] 克服 Neo4j 環境限制與原生語法轉譯
     --Prompt: "我的 Cypher 查詢在呼叫 apoc.algo.kShortestPaths 時噴出 ProcedureNotFound 的錯誤。因為這是一個學術專案的 Docker 環境，我只有唯讀權限，絕對不能改設定檔或安裝任何外部擴充包。請問我要如何只用『純原生的 Cypher 語法』，寫出能避開特定車站的替代路線搜尋與過濾邏輯？"
 
     --Outcome & Correction: 一開始 AI 居然還叫我去改 neo4j.conf 檔把 plugin 打開，我立刻糾正它，再次強調這是一個唯讀的受限環境，完全不能改 config 檔。AI 發現此路不通後，才順利轉向，幫我生出了一段純原生的 Cypher 寫法。順帶一提，它是用 MATCH path = ... 搭配 WHERE NOT ANY(...) 把特定車站從路徑節點中過濾掉，最後再用 reduce() 去加總路線時間。這個寫法讓系統完全不用靠外掛就能算出替代路線，成功克服了底層環境的限制。
+### example 4：[向量 RAG 架構設計] 建置語意檢索管道與評估模型維度變更之架構衝擊
+
+* ** (Context)**：
+  在開發 TransitFlow 的 Help Desk 智能客服助理時，我們需要建置 RAG 管道，將客服政策文件進行文本切片（Chunking）並送入 PostgreSQL 的 `pgvector` 模組。然而在測試執行向量檢索腳本 `query_policy.py` 時，系統直接拋出了巨幅的型別與維度衝突錯誤：
+
+```text
+PS D:\database> python query_policy.py
+Connecting to PostgreSQL for Vector Semantic Search...
+
+Traceback (most recent call last):
+  File "query_policy.py", line 42, in <module>
+    cur.execute("SELECT title, content FROM policy_documents ORDER BY embedding <=> %s LIMIT 3;", (query_embedding,))
+psycopg2.errors.InvalidParameterValue: ERROR: vector symbols must have the same dimension
+DETAIL: Expected 768 dimensions, but input vector has 1536 dimensions.
+```
+
+這讓我意識到系統在處理高維向量時，如果未能嚴格限定近似最近鄰（ANN）索引的維度或在實作初期未妥善定義，會導致系統完全崩潰。同時，我也需要評估未來若更換 Embedding 模型供應商（如改用 Gemini 的 3072 維）會對現有資料庫架構造成什麼衝擊。
+
+####  (Prompt)：
+
+> "我正在為 TransitFlow 專案設計一個 RAG 知識庫。PostgreSQL 中有一張表 policy_documents，其中 embedding 欄位的型別為 vector(768)。請幫我寫出建立 HNSW 索引（使用餘弦相似度）的 SQL 語法。另外，請寫一段 Python 程式碼，示範如何將自然語言查詢轉換後的 768 維列表送入資料庫，並找出最相似的 Top-3 政策片段。最後請告訴我，如果我們之後把 Embedding 模型換成 Gemini 的 3072 維，對目前這個資料庫會有什麼實務上的毀滅性影響？我們該如何修復？"
+
+####  (Outcome)：
+
+AI 給出了標準的 `USING hnsw (embedding vector_cosine_ops)` 索引建立語法，並提供利用 psycopg2 執行 `SELECT ... ORDER BY embedding <=> %s LIMIT 3` 的 Python 連線程式碼，完美實現了 Top-K 的向量檢索。更重要的是，AI 明確指出更換模型會導致「維度不匹配（Dimension Mismatch）」的災難，使現有的 HNSW 索引和查詢直接噴出 Runtime Error。AI 提供的修復程序（必須 Drop 索引、修改欄位型別、並重新對所有文件進行 Embedding Re-seeding）直接被我們採納，並寫入了設計文件的 Section 4.3 規格中，這讓我們在設計初期就避開了架構升級的隱患。
+
+---
+
+### example 5：[效能優化與索引設計] 針對 Task 6 突發事件表評估生產級部分索引之維護開銷
+
+####  (Context)：
+
+在實作 Task 6 擴充功能（Live Disruption & Adaptive Routing Engine）時，我們建立了 station_disruptions 資料表。為了測試在大數據量下的效能，我用 Python 寫了迴圈塞入 100,000 筆模擬的歷史事故紀錄，並執行路徑過濾。結果發現，雖然 Neo4j 本身很快，但關聯式資料庫每次要回傳「當前哪些車站被關閉」給路由引擎時，卻因為全表掃描（Full Table Scan）導致執行時間拉長，終端機顯示了明顯的延遲警告：
+
+```text
+PS D:\database> python skeleton/test_disruption_perf.py
+[INFO] Successfully populated 100,000 historical disruption logs.
+[PERF WARNING] Querying active disruptions took 142.5ms (Expected < 5ms).
+[PERF WARNING] PostgreSQL execution plan: Seq Scan on station_disruptions (Filter: resolved_at IS NULL)
+```
+
+考慮到鐵路系統在生產環境中長期運行會累積數百萬條歷史紀錄，如果路徑規劃引擎每次都要全表掃描去抓哪些車站目前不能通行，會嚴重拖慢精華的 O(1) 圖形路由運算速度。因此我決定利用索引優化，但我知道常規 B-Tree 索引依然會將這 10 萬筆歷史紀錄通通吃進去，導致索引檔膨脹，所以我需要 LLM 協助評估更進階的優化策略。
+
+####  (Prompt)：
+
+> "在 TransitFlow 的 Task 6 擴充功能中，station_disruptions 表會儲存歷史上所有的車站事故。但路徑搜尋引擎（Routing Engine）在運算時，只需要知道『當前正在關閉（resolved_at IS NULL）』的車站。如果我建立一個常規的 CREATE INDEX，隨著時間推移，索引檔會因為大量已解決的歷史紀錄而膨脹（Bloat）。請問在 PostgreSQL 中，有沒有辦法建立一個只針對『目前活躍中事故』的優化索引？請給出 SQL 語法，並從時間與空間複雜度的角度解釋為什麼這能幫路由引擎維持 O(1) 的效能。"
+
+####  (Outcome)：
+
+AI 推薦了「部分索引（Partial Index）」的解決方案，並給出了精確的語法：
+
+```sql
+CREATE INDEX idx_disruptions_active_station
+ON station_disruptions(station_id)
+WHERE resolved_at IS NULL;
+```
+
+AI 解析指出，由於現實世界中同時發生的突發事故通常小於總歷史資料的 1%，這個帶有 `WHERE` 條件的索引能將索引體積縮減 99% 以上。這意味著整個索引可以完全常駐在記憶體（RAM）中，使路由引擎在過濾中斷節點時，能以常數時間複雜度 O(1) 直接命中 live 瓶頸，完美解決了隨著年限增長導致的資料庫效能退化問題。再次運行腳本後，查詢延誤從 142.5ms 直接歸零（<1ms），此決策隨後被正式引入 schema.sql 與 TASK6.md 中。
 
 ---
 
