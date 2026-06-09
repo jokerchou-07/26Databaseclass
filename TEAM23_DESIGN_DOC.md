@@ -249,7 +249,7 @@ Example 3: [Graph Query Writing] 克服 Neo4j 環境限制與原生語法轉譯
     --Outcome & Correction: 一開始 AI 居然還叫我去改 neo4j.conf 檔把 plugin 打開，我立刻糾正它，再次強調這是一個唯讀的受限環境，完全不能改 config 檔。AI 發現此路不通後，才順利轉向，幫我生出了一段純原生的 Cypher 寫法。順帶一提，它是用 MATCH path = ... 搭配 WHERE NOT ANY(...) 把特定車站從路徑節點中過濾掉，最後再用 reduce() 去加總路線時間。這個寫法讓系統完全不用靠外掛就能算出替代路線，成功克服了底層環境的限制。
 ### example 4：[向量 RAG 架構設計] 建置語意檢索管道與評估模型維度變更之架構衝擊
 
-* ** (Context)**：
+####  (Context)：
   在開發 TransitFlow 的 Help Desk 智能客服助理時，我們需要建置 RAG 管道，將客服政策文件進行文本切片（Chunking）並送入 PostgreSQL 的 `pgvector` 模組。然而在測試執行向量檢索腳本 `query_policy.py` 時，系統直接拋出了巨幅的型別與維度衝突錯誤：
 
 ```text
