@@ -40,7 +40,7 @@ def seed():
         session.run("MATCH (n) DETACH DELETE n")
         print("  Cleared existing graph data")
 
-        # 1. 建立地鐵站節點
+        # 1. Create Metro Station Nodes
         for s in metro_stations:
             session.run(
                 "MERGE (n:MetroStation {station_id: $id}) "
@@ -49,7 +49,7 @@ def seed():
             )
         print(f"  Created {len(metro_stations)} MetroStation nodes")
 
-        # 2. 建立國鐵站節點
+        # 2. Create National Rail Station Nodes
         for s in rail_stations:
             session.run(
                 "MERGE (n:NationalRailStation {station_id: $id}) "
@@ -58,7 +58,7 @@ def seed():
             )
         print(f"  Created {len(rail_stations)} NationalRailStation nodes")
 
-        # 3. 建立 METRO_LINK（補上 fare 屬性）
+        # 3. Establish METRO_LINK Relationships (With Dynamically Injected Fare Properties)
         for s in metro_stations:
             for adj in s.get("adjacent_stations", []):
                 session.run(
@@ -77,7 +77,7 @@ def seed():
                 )
         print("  Created METRO_LINK relationships")
 
-        # 4. 建立 RAIL_LINK（補上 fare 屬性）
+        # 4. Establish RAIL_LINK Relationships (With Class-Based Price Differentials)
         for s in rail_stations:
             for adj in s.get("adjacent_stations", []):
                 session.run(
@@ -95,7 +95,7 @@ def seed():
                 )
         print("  Created RAIL_LINK relationships")
 
-        # 5. 建立 INTERCHANGE_TO（從 JSON 動態讀取，不再硬編碼）
+        # 5. Establish INTERCHANGE_TO Cross-Network Mappings (Dynamic JSON Ingestion)
         interchange_count = 0
         for s in metro_stations:
             if s.get("is_interchange_national_rail") and s.get("interchange_national_rail_station_id"):

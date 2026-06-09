@@ -25,10 +25,10 @@ DROP TABLE IF EXISTS metro_stations CASCADE;
 DROP TABLE IF EXISTS policy_documents CASCADE;
 
 -- ============================================================
--- 1. 核心基礎資料表 (Core Tables)
+-- 1. Core Tables
 -- ============================================================
 
--- 捷運車站表
+-- metro_stations
 CREATE TABLE IF NOT EXISTS metro_stations (
     -- PK Decision: Chosen VARCHAR(50) over SERIAL/UUID to align perfectly with the external 
     -- transportation JSON data source IDs and maintain exact node identity matching in Neo4j.
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS metro_stations (
     is_interchange BOOLEAN    DEFAULT FALSE
 );
 
--- 國鐵車站表
+-- national_rail_stations
 CREATE TABLE IF NOT EXISTS national_rail_stations (
     -- PK Decision: Chosen VARCHAR(50) over SERIAL to ensure seamless cross-referencing with 
     -- standard National Rail station codes and facilitate direct mapping to Graph DB nodes.
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS national_rail_stations (
     is_interchange BOOLEAN    DEFAULT FALSE
 );
 
--- 註冊使用者表
+-- users
 CREATE TABLE IF NOT EXISTS users (
     -- PK Decision: Chosen VARCHAR(50) over SERIAL to support secure, system-generated hash 
     -- identifiers or custom UUID strings from the application layer.
@@ -65,10 +65,10 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- ============================================================
--- 2. 班次與座位配置表 (Schedules & Layouts)
+-- 2. Schedules & Layouts
 -- ============================================================
 
--- 捷運班次表
+-- metro_schedules
 CREATE TABLE IF NOT EXISTS metro_schedules (
     -- PK Decision: Chosen VARCHAR(50) to use deterministic service strings (e.g., 'SCH_M1').
     schedule_id   VARCHAR(50)  PRIMARY KEY,
@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS metro_schedules (
     operating_days VARCHAR(50)  NOT NULL DEFAULT 'Daily'
 );
 
--- 捷運班次停靠站表 (處理時刻表與車站的多對多)
+-- metro_schedule_stops (Junction Table. Resolves the many-to-many relationship between metro schedules and stations by computing dynamic chronological attributes.)
 CREATE TABLE IF NOT EXISTS metro_schedule_stops (
     -- Normalisation Note: Junction table created to satisfy 3NF, avoiding array columns.
     schedule_id   VARCHAR(50)  REFERENCES metro_schedules(schedule_id) ON DELETE CASCADE,
@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS metro_schedule_stops (
     PRIMARY KEY (schedule_id, station_id)
 );
 
--- 國鐵班次表
+-- national_rail_schedules
 CREATE TABLE IF NOT EXISTS national_rail_schedules (
     -- PK Decision: Chosen VARCHAR(50) to match external train service codes.
     schedule_id            VARCHAR(50)  PRIMARY KEY,
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS national_rail_schedules (
     operating_days         VARCHAR(50)  NOT NULL DEFAULT 'Daily'
 );
 
--- 國鐵班次停靠站表
+-- national_rail_schedule_stops
 CREATE TABLE IF NOT EXISTS national_rail_schedule_stops (
     schedule_id  VARCHAR(50) REFERENCES national_rail_schedules(schedule_id) ON DELETE CASCADE,
     station_id   VARCHAR(50) REFERENCES national_rail_stations(station_id) ON DELETE CASCADE,
@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS national_rail_schedule_stops (
     PRIMARY KEY (schedule_id, station_id)
 );
 
--- 國鐵座位配置明細表
+-- national_rail_seat_layouts
 CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
     -- PK Decision: Chosen VARCHAR(50) to support composite logical IDs (e.g., LAYOUT_NR_SCH01_A_1A).
     layout_id     VARCHAR(50)  PRIMARY KEY, 
@@ -126,10 +126,10 @@ CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
 );
 
 -- ============================================================
--- 3. 使用者乘車與交易紀錄表 (Activity & Transactions)
+-- 3. Activity & Transactions
 -- ============================================================
 
--- 國鐵訂位紀錄表
+-- bookings
 CREATE TABLE IF NOT EXISTS bookings (
     -- PK Decision: Chosen VARCHAR(50) to allow application-side generation of tracking IDs.
     -- Delete Strategy Note: Using soft delete ('cancelled' status) to preserve audit trails.
@@ -147,7 +147,7 @@ CREATE TABLE IF NOT EXISTS bookings (
     created_at       TIMESTAMPTZ  DEFAULT NOW()
 );
 
--- 捷運搭乘歷史紀錄表
+-- metro_travel_history
 CREATE TABLE IF NOT EXISTS metro_travel_history (
     -- PK Decision: Chosen VARCHAR(50) for consistency across all transaction records.
     history_id        VARCHAR(50)  PRIMARY KEY,
@@ -162,7 +162,7 @@ CREATE TABLE IF NOT EXISTS metro_travel_history (
     fare              NUMERIC(10,2) DEFAULT 0.00
 );
 
--- 付款紀錄表
+-- payments
 CREATE TABLE IF NOT EXISTS payments (
     -- PK Decision: Chosen VARCHAR(50) for integration with external payment gateway IDs.
     payment_id     VARCHAR(50)  PRIMARY KEY,
@@ -176,7 +176,7 @@ CREATE TABLE IF NOT EXISTS payments (
     payment_date   TIMESTAMPTZ  DEFAULT CURRENT_TIMESTAMP
 );
 
--- 意見回饋表
+-- feedback
 CREATE TABLE IF NOT EXISTS feedback (
     -- PK Decision: Chosen VARCHAR(50) for uniform ID structures across the database.
     feedback_id  VARCHAR(50)  PRIMARY KEY,

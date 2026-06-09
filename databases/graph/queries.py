@@ -66,8 +66,8 @@ def query_cheapest_route(
     """Find the cheapest route based on the selected fare class with null-safety protection."""
     weight_prop = "fare_first" if fare_class == "first" else "fare_standard"
     
-    # 💡 智慧優化 Cypher：先用最快的速度抓出符合條件的所有路徑，
-    # 然後用 reduce 加上 coalesce 進行「防空值加總」，轉乘邊沒寫票價就自動當 0 元！
+    # 💡 Smart Optimization Cypher: First, quickly identify all paths that meet the criteria.
+    # Then, use reduce and coalesce to perform "anti-empty value summation," automatically setting the fare to 0 yuan for any transfer routes without a specified fare!
     query = f"""
     MATCH (start {{station_id: $origin_id}})
     MATCH (end {{station_id: $destination_id}})
@@ -81,7 +81,7 @@ def query_cheapest_route(
     with _driver() as driver:
         with driver.session() as session:
             result = session.run(query, origin_id=origin_id, destination_id=destination_id)
-            # ✅ 修正：用 result.single() 取代那行壞掉的 fetch 語法
+            # ✅ Correction: Replace the broken fetch syntax with result.single()
             record = result.single()
             if not record:
                 return {"found": False}
@@ -170,7 +170,7 @@ def query_delay_ripple(delayed_station_id: str, hops: int = 2) -> list[dict]:
                 result = session.run(query, delayed_station_id=delayed_station_id)
                 return [dict(record) for record in result]
 
-    # hops >= 1：正常搜尋周邊受影響車站
+    # hops >= 1: Normal search for nearby affected stations
     query = f"""
     MATCH p = shortestPath(
         (start {{station_id: $delayed_station_id}})-[:METRO_LINK|RAIL_LINK|INTERCHANGE_TO*1..{hops}]-(affected)

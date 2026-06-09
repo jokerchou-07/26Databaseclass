@@ -59,10 +59,10 @@ def insert_many(cur, table, columns, rows):
 def seed_metro_stations(cur):
     data = load("metro_stations.json")
     rows = [
-        (s["station_id"], s["name"], s.get("zone", 1)) # 確保把資料轉成 tuple
+        (s["station_id"], s["name"], s.get("zone", 1)) # Enforce data conversion into tuples
         for s in data
     ]
-    # 這裡的表名和欄位名稱，必須跟你的 schema.sql 100% 一致！
+    # Database table and column names map 1:1 with schema.sql definitions！
     n = insert_many(cur, "metro_stations", ["station_id", "name", "zone"], rows)
     print(f"  metro_stations: {n} rows")
 
@@ -80,7 +80,7 @@ def seed_national_rail_stations(cur):
 def seed_metro_schedules(cur):
     data = load("metro_schedules.json")
     
-    # 1. 寫入捷運主班次表，動態對應 JSON 裡的真實欄位
+    # 1.Insert records into the core metro schedule master table
     schedule_rows = [
         (s.get("schedule_id"), s.get("line", "M1"), s.get("frequency_min", 5), s.get("base_fare_usd", 0.80)) 
         for s in data
@@ -88,22 +88,22 @@ def seed_metro_schedules(cur):
     n1 = insert_many(cur, "metro_schedules", ["schedule_id", "line", "frequency_min", "fare"], schedule_rows)
     print(f"  metro_schedules: {n1} rows")
 
-    # 2. 【核心修復】解析扁平化的 stops 資料並計算抵達時間
+    # 2. Core Fix: Parse flattened station sequences and calculate arrival timestamps
     stop_rows = []
     for schedule in data:
-        # 1. Match the exact key from the provided JSON
+        # Resolve the exact array key from mock dataset artifacts
         stops_list = schedule.get("stops_in_order", [])
         
-        # 2. Get the base starting time of the train (e.g., "05:30")
+        # Extract base service departure schedule bounds (e.g., "05:30")
         base_time_str = schedule.get("first_train_time", "06:00")
         base_h, base_m = map(int, base_time_str.split(":"))
         
         for index, station_id in enumerate(stops_list):
-            # 3. Fetch the estimated travel time
+            # Fetch estimated tracking time metrics
             travel_times = schedule.get("travel_time_from_origin_min", {})
             travel_time = travel_times.get(station_id, 0)
             
-            # 4. Calculate actual valid TIME string (HH:MM:SS) for PostgreSQL
+            # Synthesize valid TIME format strings (HH:MM:SS) for PostgreSQL type validation
             total_m = base_m + travel_time
             arr_h = (base_h + (total_m // 60)) % 24
             arr_m = total_m % 60
@@ -112,7 +112,7 @@ def seed_metro_schedules(cur):
             stop_rows.append((
                 schedule.get("schedule_id"),
                 station_id,             
-                arrival_time_str,       # 👈 Insert the valid HH:MM:SS string here!
+                arrival_time_str,       # Injected compliant time token
                 index + 1               
             ))
             
@@ -166,36 +166,35 @@ def seed_national_rail_stops(cur):
     print(f"  national_rail_schedule_stops: {n} rows")
 
 def seed_seat_layouts(cur):
-    # 💡 關鍵第一步：動態讀取火車總班次表，抓出「所有實際存在的班次 ID」
+    # Dynamic Defensive Patch: Query schedules source to assemble all active schedule IDs
     schedules_data = load("national_rail_schedules.json")
     all_schedules = [s.get("schedule_id") for s in schedules_data if s.get("schedule_id")]
 
     data = load("national_rail_seat_layouts.json")
     rows = []
     
-    seeded_schedules = set()   # 記錄在座位檔中已經處理過的班次 ID
-    default_template = None    # 用來暫存第一個看到的車廂座位範本
-
-    # 1. 進入你原本的迴圈：處理 JSON 裡面原本就有的配置
+    seeded_schedules = set()   # Tracks schedules processed natively by the layout definitions
+    default_template = None    # Fallback storage for structural replication
+    # 1. Processing natively defined layout records from data assets
     for layout in data:
         schedule_id = layout.get("schedule_id")
         if not schedule_id:
             continue
         
-        seeded_schedules.add(schedule_id) # 標記這個班次已經有座位了
+        seeded_schedules.add(schedule_id) 
         
-        # 💡 動態捕捉第一個有資料的車廂配置，當作萬用備份範本
+        # Capture an initialization snapshot configuration to serve as a baseline template
         if not default_template and layout.get("coaches"):
             default_template = layout.get("coaches")
         
-        # 先進入第一層：抓取 coaches (車廂)
+        # Traverse coach mappings
         for coach_data in layout.get("coaches", []):
             coach = coach_data.get("coach")
             fare_class = coach_data.get("fare_class")
             
-            # 再進入第二層：抓取 seats (座位)
+           # Extract underlying seat instances
             for seat in coach_data.get("seats", []):
-                # 注意：JSON 裡的 key 是 seat_id，不是 seat_number
+                # Structural matching with target JSON artifacts ('seat_id')
                 seat_num = seat.get("seat_id") 
                 
                 layout_id = f"LAYOUT_{schedule_id}_{coach}_{seat_num}"
@@ -207,10 +206,10 @@ def seed_seat_layouts(cur):
                     fare_class
                 ))
                 
-    # 2. 🚀 智慧防禦機制：比對總班次表，只要發現漏掉的班次，自動拿範本解開並補齊
+    # 2. Resilient Fallback Routing: Synthesize layout infrastructure defaults for orphan schedules
     for sch_id in all_schedules:
         if sch_id not in seeded_schedules and default_template:
-            # 沿用你原本熟悉的兩層解開邏輯，只是把 schedule_id 換成漏掉的 sch_id
+            # Replicate geometry profiles onto missing targets using the baseline configuration
             for coach_data in default_template:
                 coach = coach_data.get("coach")
                 fare_class = coach_data.get("fare_class")
@@ -236,34 +235,34 @@ def seed_users(cur):
     rows = []
     for u in data:
 
-        # 1. 抓取完整名字並切開
+        # 1. Extract string literals and unpack naming components
         user_name = u.get("name") or u.get("full_name") or u.get("first_name") or "Unknown User"
         parts = user_name.split(" ", 1)
         first_name = parts[0]
         surname = parts[1] if len(parts) > 1 else ""
         
-        # 2. 處理團隊規定的新欄位 (如果 JSON 裡沒有，就塞預設值給它)
+        # 2. Default value fallback routing for schema enforcement safety criteria
         year_of_birth = u.get("year_of_birth") or 1990
         secret_question = u.get("secret_question") or "What is your favorite color?"
         secret_answer = u.get("secret_answer") or "Blue"
         
-        # 3. 密碼加密 (使用報告中承諾的 bcrypt，淘汰 SHA-256)
+        # 3. Cryptographic Upgrades: Deploy robust bcrypt hashing primitives over sha256 hashes
         original_password = u.get("password", "default_pass")
         hashed_password = bcrypt.hashpw(original_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         
-        # 4. 把所有資料正確裝箱 (注意這裡的數量和順序！)
+        # 4. Pack complete row fields matching destination array indexes
         rows.append((
             u.get("user_id"), 
             first_name, 
             surname, 
-            year_of_birth,     # 補上出生年份
+            year_of_birth,     
             u.get("email"), 
-            hashed_password,   # 使用 bcrypt 雜湊後的密碼
-            secret_question,   # 補上安全提示問題
-            secret_answer      # 補上安全提示答案
+            hashed_password,   
+            secret_question,   
+            secret_answer      
         ))
         
-    # 5. 寫入資料庫 (欄位列表必須跟上面 rows.append 的順序一模一樣！)
+    # 5. Execute relational streaming insertion blocks
     n = insert_many(
         cur, 
         "users", 
@@ -277,7 +276,7 @@ def seed_national_rail_bookings(cur):
     rows = []
     
     for b in data:
-        # 1. 狀態清洗：把不合規的 'completed' 強制轉為 'confirmed'
+        # 1. State Normalization: Cast non-standard 'completed' strings to compliant 'confirmed' states
         raw_status = b.get("status", "confirmed").lower()
         if raw_status == "completed":
             final_status = "confirmed"
@@ -286,22 +285,22 @@ def seed_national_rail_bookings(cur):
         else:
             final_status = raw_status
 
-        # 2. 資料裝箱：盡量抓取 JSON 的真實資料，沒有的話再給預設值
+        # 2. Structural assembly mapping matching underlying relational foreign keys
         rows.append((
             b.get("booking_id"), 
             b.get("user_id"), 
-            b.get("schedule_id", "NR_SCH01"),            # 優先抓 JSON，沒有才用預設值
-            b.get("origin_station_id", "STN_TPE"),       # 補上起點 (Schema 需要)
-            b.get("destination_station_id", "STN_ZLI"),  # 補上終點 (Schema 需要)
+            b.get("schedule_id", "NR_SCH01"),           
+            b.get("origin_station_id", "STN_TPE"),       
+            b.get("destination_station_id", "STN_ZLI"),  
             b.get("travel_date"), 
-            b.get("departure_time", "07:00:00"),         # 資料庫 TIME 型態建議補上秒數格式
-            b.get("carriage_number", "A"),               # ⚠️ 檢查你的 JSON 裡是否有座位資訊
-            b.get("seat_number", "1A"),                  # 如果 JSON 裡有獨立的 seat_number 就會抓到，才不會大家都坐 1A
+            b.get("departure_time", "07:00:00"),         
+            b.get("carriage_number", "A"),              
+            b.get("seat_number", "1A"),                  
             b.get("amount_usd", 0.0), 
-            final_status                                 # 放進我們清洗乾淨的狀態
+            final_status                                 
         ))
 
-    # 3. 寫入資料庫：確保欄位數量與上方 rows.append 的順序完全一致
+    # 3. Stream data blocks to destination schema constraints
     n = insert_many(
         cur,
         "bookings",
@@ -321,35 +320,35 @@ def seed_metro_travels(cur):
     rows = []
     
     for t in data:
-        # 1. 抓取進站時間
+        # 1. Capture base tracking boundaries
         entry_time = t.get("entry_time", "2026-05-28 08:00:00")
         
-        # 2. 智慧防呆：如果 JSON 裡沒有 travel_date，就從 entry_time 的字串切出日期 (YYYY-MM-DD)
+        # 2. Chronological Parsing Fallback: Unpack calendar segment string tokens from entry timestamps
         travel_date = t.get("travel_date")
         if not travel_date and entry_time:
-            travel_date = entry_time.split(" ")[0] # 把 "2026-05-28 08:00:00" 切成 "2026-05-28"
+            travel_date = entry_time.split(" ")[0] # devide "2026-05-28 08:00:00" into "2026-05-28"
             
-        # 3. 處理欄位名稱差異 (相容你早期的 JSON key，如 trip_id, amount_usd)
+        # 3. Normalize variable naming permutations across conflicting legacy formats
         history_id = t.get("history_id") or t.get("trip_id")
         entry_station = t.get("entry_station_id") or t.get("origin_station_id")
         exit_station = t.get("exit_station_id") or t.get("destination_station_id")
         fare = t.get("fare") or t.get("amount_usd") or 0.0
         
-        # 4. 精準裝箱
+        # 4. Construct structural row entries
         rows.append((
             history_id, 
             t.get("user_id"), 
-            t.get("schedule_id"), # 這個欄位 schema 允許是 null，所以找不到也沒關係
+            t.get("schedule_id"), 
             entry_station, 
             exit_station, 
-            travel_date,          # 💡 補上我們剛剛切出來的日期
+            travel_date,         
             entry_time, 
             t.get("exit_time"), 
             t.get("ticket_type", "Single Ticket"), 
             fare
         ))
 
-    # 5. 寫入資料庫 (確認欄位陣列順序完全對齊 schema.sql)
+    # 5. Flush records down relational pipelines matching structural indexes
     n = insert_many(
         cur,
         "metro_travel_history",
@@ -367,13 +366,13 @@ def seed_payments(cur):
     data = load("payments.json")
     rows = []
     for p in data:
-        # 1. 抓取目標 ID
+        # 1. Resolve composite transactional key references
         raw_target_id = p.get("booking_id") or p.get("trip_id") or p.get("history_id")
         
-        # 2. 智慧分流：根據前綴字元決定外鍵，並同時推斷 reference_type
+        # 2. Key Differentiation Routing: Parse alphanumeric structures to classify context bindings
         b_id = None
         h_id = None
-        ref_type = "national_rail"  # 預設防呆
+        ref_type = "national_rail"  
         
         if raw_target_id:
             if raw_target_id.startswith("BK") or raw_target_id.startswith("NR"):
@@ -383,7 +382,7 @@ def seed_payments(cur):
                 h_id = raw_target_id
                 ref_type = "metro"
 
-        # 3. 狀態清洗：把 'paid' 強制轉為合法的 'success'
+        # 3. State Sanitization: Convert legacy 'paid' literals to uniform relational 'success' values
         raw_status = p.get("status") or p.get("payment_status") or "paid"
         raw_status = raw_status.lower()
         if raw_status == "paid":
@@ -395,19 +394,19 @@ def seed_payments(cur):
 
         amount = p.get("amount_usd") or p.get("amount") or 0.00
         
-        # 4. 精準裝箱 (總共 8 個欄位)
+        # 4. Compile payment payload variables
         rows.append((
             p.get("payment_id"), 
-            p.get("user_id"),  # 💡 補上付錢的人
+            p.get("user_id"),  
             b_id,   
             h_id,   
-            ref_type,          # 💡 補上 Schema 規定的 NOT NULL 分類
+            ref_type,          
             amount, 
             p.get("payment_method", "credit_card"),      
-            final_status       # 💡 放入清洗過後的狀態
+            final_status       
         ))
         
-    # 5. 寫入資料庫
+    # 5. Stream rows using psycopg2 internal matrix block builders
     n = insert_many(
         cur, 
         "payments", 
