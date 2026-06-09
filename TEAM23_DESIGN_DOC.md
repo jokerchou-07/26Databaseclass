@@ -271,9 +271,8 @@ Example 3: [Graph Query Writing] 克服 Neo4j 環境限制與原生語法轉譯
 
 ## Task 6 — Optional Extension Bonus · Section 7 · up to +15
 
-## Section 7 — Task 6 自由選繳擴充功能加分項 (Optional Extension Bonus)
-
 ### 1. 開發動機與業務邏輯 (Motivation & Business Logic)
+
 在現實世界的雙網路軌道交通系統中，突發性的營運事件（如訊號故障、暴雨淹水或軌道維護）經常導致特定車站必須暫時關閉。此時，靜態的路徑搜尋引擎將無法應對這類動態變化，進而導致乘客預訂到失效的行程，造成系統產生無效訂位與營運瓶頸。
 
 本擴充功能透過引入**「即時事故與自適應路徑搜尋引擎 (Live Disruption & Adaptive Routing Engine)」**，為 TransitFlow 智能助手帶來顯著的實用價值。此功能允許系統在不破壞圖形資料庫（Graph Database）底層拓撲結構的前提下，於即時營運中動態隔離受影響的車站（跨捷運與國鐵網路），確保路徑搜尋演算法能以高效過濾掉已關閉的節點，在高併發的用戶負載下維持系統的穩定度。
@@ -281,6 +280,7 @@ Example 3: [Graph Query Writing] 克服 Neo4j 環境限制與原生語法轉譯
 ### 2. 資料表變更與 Schema 程式碼片段 (Database Changes & Schema Snippets)
 
 #### A. 關聯式架構層 (PostgreSQL)
+
 我們在 `databases/relational/schema.sql` 中引入了專用的營運紀錄表 `station_disruptions`，用以嚴格追蹤突發事件的持續時間、嚴重程度與詳細描述。
 
 ```sql
@@ -298,3 +298,73 @@ CREATE TABLE IF NOT EXISTS station_disruptions (
 CREATE INDEX IF NOT EXISTS idx_disruptions_active_station 
 ON station_disruptions(station_id) 
 WHERE resolved_at IS NULL;
+```
+
+設計決策與優化原理：透過採用部分索引 (Partial Index)（即 WHERE resolved_at IS NULL 條件限制），關聯式資料庫會完全忽略數百萬條已解決的历史事故紀錄，僅針對當前「活躍中」的車站關閉事件建立索引（通常小於總資料量的 1%）。這確保了路徑搜尋引擎在篩選當前系統瓶頸時，能維持極高的 O(1) 查詢效率，同時大幅減少記憶體消耗，避免 PostgreSQL 產生 B-Tree 索引膨脹。
+
+#### B. 圖形架構層 (Neo4j)
+
+車站節點（:MetroStation 與 :NationalRailStation）增設了一個動態狀態屬性：
+
+**status：** 在資料灌錄（Seeding）時預設初始化為 `"OPEN"`，當發生突發事件時，系統會將其動態切換為 `"CLOSED"`，藉此在圖形網路中阻斷該節點的通行評估。
+
+### 3. 範例查詢與預期輸出 (Example Queries & Expected Output)
+
+#### 查詢 A：在圖形網路中動態隔離受影響的節點 (Neo4j Cypher)
+
+當系統接收到事故通報時，後端會觸發此查詢以更新特定車站節點的營運狀態：
+
+##### Cypher
+
+```cypher
+MATCH (s {station_id: $station_id})
+SET s.status = $status
+RETURN s.station_id AS station_id, s.status AS status;
+```
+
+**預期輸出結果：**
+
+| station_id | status   |
+| ---------- | -------- |
+| "MS02"     | "CLOSED" |
+
+#### 查詢 B：繞過關閉車站的自適應動態路徑規劃 (Neo4j Cypher)
+
+路徑規劃引擎在執行 apoc.algo.kShortestPaths 尋找最短路徑時，會透過動態狀態斷言（Predicate）自動過濾節點：
+
+##### Cypher
+
+```cypher
+MATCH (start {station_id: $origin_id})
+MATCH (end {station_id: $destination_id})
+CALL apoc.algo.kShortestPaths(start, end, 'METRO_LINK|RAIL_LINK|INTERCHANGE_TO', 'travel_time_min', 5) YIELD path
+WHERE NOT any(node IN nodes(path) WHERE node.status = 'CLOSED')
+RETURN [node in nodes(path) | {station_id: node.station_id, name: node.name}] AS route_stations
+LIMIT 1;
+```
+
+**預期輸出結果：**
+
+返回一組替代的車站節點序列，且該路徑序列中絕不包含任何 `status = 'CLOSED'` 的中斷節點。
+
+### 4. 測試與驗證證據 (Testing & Verification Evidence)
+
+本擴充功能已於在地端環境透過自動化 Python 整合測試腳本 (`test_disruption.py`) 進行驗證，成功調用 Neo4j Python 驅動程式與資料庫容器進行連線與讀寫測試。
+
+#### 腳本執行指令：
+
+##### PowerShell
+
+```powershell
+python test_disruption.py
+```
+
+#### 終端機執行日誌追蹤 (Log Trace)：
+
+##### Plaintext
+
+```text
+=== TransitFlow Task 6 擴充功能測試 ===
+正在嘗試將車站 MS02 的狀態更新為 CLOSED...
+✅ 成功！資料庫已成功將車站 MS02 標記為 CLOSED。
+```
