@@ -271,24 +271,30 @@ Example 3: [Graph Query Writing] 克服 Neo4j 環境限制與原生語法轉譯
 
 ## Task 6 — Optional Extension Bonus · Section 7 · up to +15
 
-To be eligible for the bonus in any marking scheme, all four of the following must be present:
+## Section 7 — Task 6 自由選繳擴充功能加分項 (Optional Extension Bonus)
 
-1. The extension touches database code (new schema, queries, or seed data), or includes a substantial UI improvement. Substantial means it adds a meaningful new interaction or surfaces data the current UI cannot show — for example, a trip history panel, a route visualiser, or an analytics dashboard. Cosmetic-only changes (theme colours, button labels, layout tweaks) do not qualify. UI-only submissions are capped at 3 marks per component; database extensions are eligible for the full 15.
-2. Detailed inline comments explain every new database operation *(not required for UI-only submissions)*.
-3. A **Section 7** in this design document covers motivation, schema changes, example queries, and testing evidence; for UI-only submissions, cover motivation, UI design decisions, and screenshots instead.
-4. A **`TASK6.md`** file at the repo root lists every file modified or added, with specific function and table names. Each modified file must also have a `# TASK 6 EXTENSION:` comment near the top.
+### 1. 開發動機與業務邏輯 (Motivation & Business Logic)
+在現實世界的雙網路軌道交通系統中，突發性的營運事件（如訊號故障、暴雨淹水或軌道維護）經常導致特定車站必須暫時關閉。此時，靜態的路徑搜尋引擎將無法應對這類動態變化，進而導致乘客預訂到失效的行程，造成系統產生無效訂位與營運瓶頸。
 
-The Section 7 bonus marks in this scheme are awarded for the quality of the document section only.
-The code and live components have their own independent bonus marks.
+本擴充功能透過引入**「即時事故與自適應路徑搜尋引擎 (Live Disruption & Adaptive Routing Engine)」**，為 TransitFlow 智能助手帶來顯著的實用價值。此功能允許系統在不破壞圖形資料庫（Graph Database）底層拓撲結構的前提下，於即時營運中動態隔離受影響的車站（跨捷運與國鐵網路），確保路徑搜尋演算法能以高效過濾掉已關閉的節點，在高併發的用戶負載下維持系統的穩定度。
 
-| Criterion | Max | What earns full marks |
-|-----------|-----|-----------------------|
-| **Motivation** — explains why this extension adds value to the TransitFlow assistant | 3 | Clear, specific argument for why the feature improves the system — not just "it adds more features" |
-| **Database changes** — new tables, relationships, or vector entries described with schema snippets | 4 | Actual schema or Cypher shown for new structures; not a prose-only description |
-| **Example queries** — SQL/Cypher/similarity search shown with expected output | 4 | At least one complete query shown with the output it produces |
-| **Testing evidence** — screenshots, query output in pgAdmin/Neo4j Browser, or chat UI demo | 4 | Evidence that the extension was actually run and produced correct output |
-| **Task 6 Doc Bonus Total** | **+15** | |
+### 2. 資料表變更與 Schema 程式碼片段 (Database Changes & Schema Snippets)
 
-> **UI-only extension:** Section 7 for a UI-only submission should cover motivation and include screenshots or a component description instead of schema snippets. Up to 3 marks awarded holistically.
+#### A. 關聯式架構層 (PostgreSQL)
+我們在 `databases/relational/schema.sql` 中引入了專用的營運紀錄表 `station_disruptions`，用以嚴格追蹤突發事件的持續時間、嚴重程度與詳細描述。
 
-> If Section 7 is present but the code does not include `TASK6.md` or per-file comment markers, the live and code bonus sections will not be awarded — only this document bonus can be graded.
+```sql
+CREATE TABLE IF NOT EXISTS station_disruptions (
+    disruption_id SERIAL PRIMARY KEY,
+    station_id VARCHAR(50) NOT NULL,
+    network_type VARCHAR(20) NOT NULL CHECK (network_type IN ('metro', 'national_rail')),
+    severity VARCHAR(20) DEFAULT 'DELAY' CHECK (severity IN ('DELAY', 'CLOSED')),
+    description TEXT NOT NULL,
+    reported_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP WITH TIME ZONE
+);
+
+-- 生產級「部分索引」優化策略
+CREATE INDEX IF NOT EXISTS idx_disruptions_active_station 
+ON station_disruptions(station_id) 
+WHERE resolved_at IS NULL;
