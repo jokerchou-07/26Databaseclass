@@ -35,7 +35,7 @@ or reassigned mid-project).
 | **Task 3** — PostgreSQL seeding (`seed_postgres.py`) | 周怡辰| 林誼婷| 由Primary Owner製作、修改可完整運行程式，Supporting Member負責測試、小幅度修改|
 | **Task 4** — Neo4j graph design & seeding (`seed_neo4j.py`, `seed.cypher`) | 周怡辰| 林誼婷| 由Primary Owner製作、修改可完整運行程式，Supporting Member負責測試、小幅度修改|
 | **Task 5** — Neo4j query functions (`graph/queries.py`) | 林誼婷 | 周怡辰| 由Primary Owner製作、修改可完整運行程式，Supporting Member負責測試、小幅度修改|
-| **Task 6** *(if attempted)* — Optional extension | 梁易軒| | |
+| **Task 6** *(if attempted)* — Optional extension | 梁易軒| |由Primary Owner設計擴充架構並主導撰寫完整功能與測試腳本，Supporting Members負責整合與地端連線環境測試。 |
 
 ### Design Document
 
