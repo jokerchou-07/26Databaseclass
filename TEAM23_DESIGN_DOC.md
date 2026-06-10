@@ -123,7 +123,8 @@ comments：TEXT，使用者意見內容。
 submitted_at：TIMESTAMPTZ，回饋提交時間。
 
 ## Section 2 — Normalisation Justification · /20
-2.1 3NF Normalisation Decision在 TransitFlow 關聯式資料庫的綱要設計中，我們嚴格遵循了第三正規化（3NF）的規範，以確保資料的一致性並消除不必要的冗餘。決策實例（Design Decision）：我們並未在捷運班次表（metro_schedules）中直接使用 PostgreSQL 的陣列欄位（如 text[]）來儲存該班次所經過的所有車站，而是將停靠資訊獨立抽離，建立了一張專門的結合表（Junction Table）——metro_schedule_stops。功能相依性與正規化論述（Functional Dependency & Normalisation Argument）：如果在 metro_schedules 中引入陣列或複合欄位來存儲車站與到站時間，將會違反第一正規化（1NF）的「屬性原子性（Atomicity）」原則。進一步分析其功能相依性（Functional Dependency, FD），在我們的結合表中，非主鍵屬性「抵達時間（arrival_time）」與「停靠順序（stop_order）」必須同時由「班次代碼（schedule_id）」與「車站代碼（station_id）」共同決定，亦即：$$
+2.1 3NF Normalisation Decision在 TransitFlow 關聯式資料庫的綱要設計中，我們嚴格遵循了第三正規化（3NF）的規範，以確保資料的一致性並消除不必要的冗餘。決策實例（Design Decision）：我們並未在捷運班次表（metro_schedules）中直接使用 PostgreSQL 的陣列欄位（如 text[]）來儲存該班次所經過的所有車站，而是將停靠資訊獨立抽離，建立了一張專門的結合表（Junction Table）——metro_schedule_stops。功能相依性與正規化論述（Functional Dependency & Normalisation Argument）：如果在 metro_schedules 中引入陣列或複合欄位來存儲車站與到站時間，將會違反第一正規化（1NF）的「屬性原子性（Atomicity）」原則。進一步分析其功能相依性（Functional Dependency, FD），在我們的結合表中，非主鍵屬性「抵達時間（arrival_time）」與「停靠順序（stop_order）」必須同時由「班次代碼（schedule_id）」與「車站代碼（station_id）」共同決定，亦即：
+$$
 (\text{schedule\_id}, \text{station\_id})
 \rightarrow
 (\text{arrival\_time}, \text{stop\_order})
