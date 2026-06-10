@@ -123,62 +123,12 @@ comments：TEXT，使用者意見內容。
 submitted_at：TIMESTAMPTZ，回饋提交時間。
 
 ## Section 2 — Normalisation Justification · /20
-2.1 3NF Normalisation Decision
-
-在 TransitFlow 關聯式資料庫的綱要設計中，我們嚴格遵循了第三正規化（3NF）的規範，以確保資料的一致性並消除不必要的冗餘。
-
-### Design Decision
-
-我們並未在捷運班次表（`metro_schedules`）中直接使用 PostgreSQL 的陣列欄位（如 `text[]`）來儲存該班次所經過的所有車站，而是將停靠資訊獨立抽離，建立一張專門的結合表（Junction Table）—— `metro_schedule_stops`。
-
-### Functional Dependency & Normalisation Argument
-
-如果在 `metro_schedules` 中引入陣列或複合欄位來存儲車站與到站時間，將會違反第一正規化（1NF）的 **屬性原子性（Atomicity）** 原則。
-
-進一步分析其功能相依性（Functional Dependency, FD），在結合表 `metro_schedule_stops` 中，非主鍵屬性：
-
-- `arrival_time`
-- `stop_order`
-
-必須同時由：
-
-- `schedule_id`
-- `station_id`
-
-共同決定，因此：
-
-$$
-\{\text{schedule\_id}, \text{station\_id}\}
+2.1 3NF Normalisation Decision在 TransitFlow 關聯式資料庫的綱要設計中，我們嚴格遵循了第三正規化（3NF）的規範，以確保資料的一致性並消除不必要的冗餘。決策實例（Design Decision）：我們並未在捷運班次表（metro_schedules）中直接使用 PostgreSQL 的陣列欄位（如 text[]）來儲存該班次所經過的所有車站，而是將停靠資訊獨立抽離，建立了一張專門的結合表（Junction Table）——metro_schedule_stops。功能相依性與正規化論述（Functional Dependency & Normalisation Argument）：如果在 metro_schedules 中引入陣列或複合欄位來存儲車站與到站時間，將會違反第一正規化（1NF）的「屬性原子性（Atomicity）」原則。進一步分析其功能相依性（Functional Dependency, FD），在我們的結合表中，非主鍵屬性「抵達時間（arrival_time）」與「停靠順序（stop_order）」必須同時由「班次代碼（schedule_id）」與「車站代碼（station_id）」共同決定，亦即：$$
+(\text{schedule\_id}, \text{station\_id})
 \rightarrow
-\{\text{arrival\_time}, \text{stop\_order}\}
+(\text{arrival\_time}, \text{stop\_order})
 $$
-
-因為複合主鍵
-
-$$
-X = \{\text{schedule\_id}, \text{station\_id}\}
-$$
-
-為該表的候選鍵（Candidate Key），且表中不存在任何非主鍵屬性對主鍵的：
-
-- 部份相依（Partial Dependency）
-- 傳遞相依（Transitive Dependency）
-
-換言之，每一個非主鍵屬性都直接且僅相依於超鍵（Super Key）。
-
-因此：
-
-- 滿足第二正規化（2NF）
-- 滿足第三正規化（3NF）
-- 同時符合 BCNF 的要求
-
-此設計能有效避免：
-
-1. 更新異常（Update Anomaly）
-2. 插入異常（Insertion Anomaly）
-3. 刪除異常（Deletion Anomaly）
-
-例如，當某個車站更名或班次停靠資訊調整時，只需修改單一資料來源，而不會造成資料不一致或重複更新的問題。
+為該表的候選鍵（Candidate Key），且表中不存在任何非主鍵屬性對於主鍵的「部份相依（Partial Dependency）」或「傳遞相依（Transitive Dependency）」。換言之，每一個非主鍵屬性都直接且僅相依於超鍵（Super Key）。這完全符合第三正規化（3NF）與 BCNF 的嚴格定義，從根本上杜絕了當某個車站更名或班次調整時，可能引發的更新異常（Update Anomaly）、插入異常與刪除異常。
 
 2.2 Deliberate De-normalisation Trade-off雖然完整正規化能保證資料結構的嚴謹度，但在現實的大眾運輸系統高併發查詢場景中，有時必須進行具備工程合理性的調整。決策實例（De-normalisation Choice）：在國鐵訂位紀錄表（bookings）與付款紀錄表（payments）中，我們選擇了反正規化（De-normalisation）策略，直接冗餘儲存了交易當下的實付金額欄位——amount_usd。讀取效能與複雜度權衡（Rationale & Trade-offs）：若按照純 3NF 的教條設計，訂單的總金額應該在執行期（Runtime）透過 bookings 串接 national_rail_seat_layouts 判定艙等，再 Join national_rail_schedules 取得基本票價，最後進行算術運算得出。然而，大眾運輸系統中「查詢個人歷史訂單」與「核對歷史帳務」的頻率極高。如果每次讀取都要執行昂貴的多表串接（Multi-table Joins）與 CPU 算術解算，將會對資料庫造成巨大的負載。我們引入此反正規化設計，犧牲了極少量的儲存空間，但換取了直接讀取的效能，顯著降低了 CPU 開銷；同時，這也能對抗「歷史票價變更黃金軌跡丟失」的風險——即便未來鐵路調漲基本票價，過去已完成的訂單金額也絕對不會被錯誤地連動更新。
 
