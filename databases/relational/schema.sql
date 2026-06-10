@@ -1,4 +1,5 @@
 -- TASK 6 EXTENSION: Live Disruption Management and Adaptive Routing Engine
+-- TASK 6 EXTENSION INDEX: Instant lookup for active network bottlenecks during route-finding
 -- ==============================================================================
 -- TransitFlow Relational Database Schema (PostgreSQL)
 -- This file defines the DDL structure for users, stations, schedules, seat layouts,
@@ -133,6 +134,9 @@ CREATE TABLE IF NOT EXISTS national_rail_seat_layouts (
 CREATE TABLE IF NOT EXISTS bookings (
     -- PK Decision: Chosen VARCHAR(50) to allow application-side generation of tracking IDs.
     -- Delete Strategy Note: Using soft delete ('cancelled' status) to preserve audit trails.
+    -- Soft delete: bookings use status column ('cancelled') to preserve audit history.
+    -- Hard cascade: child records (stops, layouts, payments) cascade with parent deletion because they have no independent meaning without their parent record.
+    -- RESTRICT: schedule FKs on bookings use RESTRICT to prevent accidental data loss when active bookings exist against a schedule.
     booking_id       VARCHAR(50)  PRIMARY KEY,
     user_id          VARCHAR(50)  NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
     schedule_id      VARCHAR(50)  NOT NULL REFERENCES national_rail_schedules(schedule_id) ON DELETE RESTRICT,
