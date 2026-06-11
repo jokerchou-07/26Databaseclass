@@ -395,17 +395,18 @@ RETURN s.station_id AS station_id, s.status AS status;
 
 #### 查詢 B：繞過關閉車站的自適應動態路徑規劃 (Neo4j Cypher)
 
-路徑規劃引擎在執行 apoc.algo.kShortestPaths 尋找最短路徑時，會透過動態狀態斷言（Predicate）自動過濾節點：
+路徑規劃引擎在執行路徑搜尋時，會透過動態狀態斷言（Predicate）自動過濾節點：
 
 ##### Cypher
 
 ```cypher
 MATCH (start {station_id: $origin_id})
 MATCH (end {station_id: $destination_id})
-CALL apoc.algo.kShortestPaths(start, end, 'METRO_LINK|RAIL_LINK|INTERCHANGE_TO', 'travel_time_min', 5) YIELD path
-WHERE NOT any(node IN nodes(path) WHERE node.status = 'CLOSED')
-RETURN [node in nodes(path) | {station_id: node.station_id, name: node.name}] AS route_stations
-LIMIT 1;
+CALL apoc.algo.allSimplePaths(start, end, 'METRO_LINK|RAIL_LINK|INTERCHANGE_TO', 8)
+YIELD path
+WHERE NOT ANY(node IN nodes(path) WHERE node.status = 'CLOSED')
+RETURN [node IN nodes(path) | {station_id: node.station_id, name: node.name}] AS route_stations
+LIMIT 1
 ```
 
 **預期輸出結果：**
