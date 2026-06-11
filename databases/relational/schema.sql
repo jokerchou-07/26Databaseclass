@@ -1,5 +1,7 @@
 -- TASK 6 EXTENSION: Dynamic Disruption Management and Adaptive Routing Engine
 -- TASK 6 EXTENSION INDEX: Instant lookup for active network bottlenecks during route-finding
+-- New table: station_disruptions
+-- New index: idx_disruptions_active_station
 -- ==============================================================================
 -- TransitFlow Relational Database Schema (PostgreSQL)
 -- This file defines the DDL structure for users, stations, schedules, seat layouts,

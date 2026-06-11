@@ -253,7 +253,8 @@ Scenario 2：跨系統轉乘路徑（query_interchange_path）
 
     --Prompt: "我的 Cypher 查詢在呼叫 apoc.algo.kShortestPaths 時噴出 ProcedureNotFound 的錯誤。因為這是一個學術專案的 Docker 環境，我只有唯讀權限，絕對不能改設定檔或安裝任何外部擴充包。請問我要如何只用『純原生的 Cypher 語法』，寫出能避開特定車站的替代路線搜尋與過濾邏輯？"
 
-    --Outcome & Correction: 一開始 AI 居然還叫我去改 neo4j.conf 檔把 plugin 打開，我立刻糾正它，再次強調這是一個唯讀的受限環境，完全不能改 config 檔。AI 發現此路不通後，才順利轉向，幫我生出了一段純原生的 Cypher 寫法。順帶一提，它是用 MATCH path = ... 搭配 WHERE NOT ANY(...) 把特定車站從路徑節點中過濾掉，最後再用 reduce() 去加總路線時間。這個寫法讓系統完全不用靠外掛就能算出替代路線，成功克服了底層環境的限制。
+    --Outcome & Correction: 一開始 AI 居然還叫我去改 neo4j.conf 檔把 plugin 打開，我立刻糾正它，再次強調這是一個唯讀的受限環境，完全不能改 config 檔。AI 發現此路不通後，才順利轉向，AI 隨後就把寫法改成純原生的 Cypher 寫法，使用 MATCH path = (start)-[:METRO_LINK|RAIL_LINK|INTERCHANGE_TO*1..15]-(end) 搭配 WHERE NOT ANY(node IN nodes(path) WHERE node.station_id = $avoid_station_id) 把特定車站從路徑節點中過濾掉，最後再用 reduce() 加總路線時間。然而實際測試時發現 *1..15 無方向遍歷在 30 個節點的圖裡會產生數萬條候選路徑造成 timeout，因此我進一步將其改為 CALL apoc.algo.allSimplePaths(start, end, 'METRO_LINK|RAIL_LINK|INTERCHANGE_TO', 8)，以深度 8 限制搜尋範圍，成功解決效能問題。
+    
 ### example 4：[向量 RAG 架構設計] 建置語意檢索管道與評估模型維度變更之架構衝擊
 
 ####  (Context)：

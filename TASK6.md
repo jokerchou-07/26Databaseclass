@@ -1,5 +1,26 @@
 # TASK 6 EXTENSION: Dynamic Disruption Management and Adaptive Routing Engine
 
+## Files Modified or Added
+### databases/relational/schema.sql
+- `# TASK 6 EXTENSION:` comment added near top of file
+- New table: `station_disruptions`
+- New index: `idx_disruptions_active_station` (partial index WHERE resolved_at IS NULL)
+### databases/graph/queries.py
+- `# TASK 6 EXTENSION:` comment added near top of file
+- New function: `query_set_station_status(station_id: str, status: str) -> bool`
+### TASK6.md
+- This file (root documentation)
+
+## Summary
+The extension adds a live disruption tracking system:
+- PostgreSQL `station_disruptions` table logs incident reports with severity and timestamps
+- A partial index ensures O(1) lookup of currently active closures
+- Neo4j station nodes gain a dynamic `status` property (OPEN/CLOSED)
+- `query_set_station_status()` toggles node status in real time so the routing
+  engine can bypass closed stations via `query_alternative_routes()`
+
+
+## Design doc
 ## 1. Motivation & Business Logic
 
 In real-world dual-network transit systems, unexpected incidents—such as signal failures, track maintenance, scheduling overruns, or severe weather—cause sudden station closures or severe service delays. 

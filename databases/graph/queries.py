@@ -1,5 +1,5 @@
--- TASK 6 EXTENSION: Dynamic Disruption Management and Adaptive Routing Engine
--- ==============================================================================
+# TASK 6 EXTENSION: Dynamic Disruption Management and Adaptive Routing Engine
+# New function: query_set_station_status(station_id, status)
 from __future__ import annotations
 
 from typing import Optional
