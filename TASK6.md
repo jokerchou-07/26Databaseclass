@@ -96,12 +96,13 @@ RETURN s.station_id AS station_id, s.status AS status;
 #### Cypher
 
 ```cypher
-MATCH (start {station_id: $origin_id}) 
-MATCH (end {station_id: $destination_id}) 
-CALL apoc.algo.kShortestPaths(start, end, 'METRO_LINK|RAIL_LINK|INTERCHANGE_TO', 'travel_time_min', 5) YIELD path 
-WHERE NOT any(node IN nodes(path) WHERE node.status = 'CLOSED') 
-RETURN [node in nodes(path) | {station_id: node.station_id, name: node.name}] AS route_stations 
-LIMIT 1;
+MATCH (start {station_id: $origin_id})
+MATCH (end {station_id: $destination_id})
+CALL apoc.algo.allSimplePaths(start, end, 'METRO_LINK|RAIL_LINK|INTERCHANGE_TO', 8)
+YIELD path
+WHERE NOT ANY(node IN nodes(path) WHERE node.status = 'CLOSED')
+RETURN [node IN nodes(path) | {station_id: node.station_id, name: node.name}] AS route_stations
+LIMIT 1
 ```
 
 ## 5. Verification & Testing Evidence
