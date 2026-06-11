@@ -1,4 +1,4 @@
--- TASK 6 EXTENSION: Live Disruption Management and Adaptive Routing Engine
+-- TASK 6 EXTENSION: Dynamic Disruption Management and Adaptive Routing Engine
 -- TASK 6 EXTENSION INDEX: Instant lookup for active network bottlenecks during route-finding
 -- ==============================================================================
 -- TransitFlow Relational Database Schema (PostgreSQL)
